@@ -1,13 +1,12 @@
-# aoc2018
+# Advent of Code 2018
 
-To compile code
+## To Compile
 ```
 nim c filename.nim
 ```
+Add ```--r``` flag to immediately run once compiled.
 
-Add ```--r``` flag to immediately run once compiled
-
-Otherwise to run the code:
+## To Run
 ```
 ./filename.exe
 ```
