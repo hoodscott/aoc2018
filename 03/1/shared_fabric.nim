@@ -46,4 +46,15 @@ for row in fabric_map:
     if inch > 1:
       double_requested += 1
 
-echo double_requested
+echo "Part 1 Answer: ", double_requested
+
+# go back through the claims to find one that has no overlap
+block each_claim:
+  for claim in claims:
+    block check_claim:
+      for x in claim.start_X .. claim.start_X + claim.width - 1:
+        for y in claim.start_Y .. claim.start_Y + claim.height - 1:
+          if fabric_map[y][x] != 1:
+            break check_claim
+      echo "Part 2 Answer: ", claim.id
+      break each_claim
