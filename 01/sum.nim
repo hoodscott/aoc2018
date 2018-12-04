@@ -1,11 +1,7 @@
 import strutils
 
-var
-  sum: int
+proc sumLines(f_name: string): int = 
+  for line in lines f_name:
+    result += parseInt(line)
 
-sum = 0
-
-for line in lines "input.txt":
-  sum += parseInt(line)
-
-echo sum
+echo sumLines("input.txt")

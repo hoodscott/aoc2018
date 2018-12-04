@@ -1,22 +1,18 @@
 import strutils
 import sets
 
-var
-  sum: int
-  running_total = initSet[int]()
-
-sum = 0
-running_total.incl(sum)
-
-block infinite_loop:
+proc first_duplicate_total (f_name: string): int = 
+  var
+    running_total = initSet[int]()
+  # loop infinitely around the file
   while true:
-    for line in lines "input.txt":
-      sum += parseInt(line)
-      if contains(running_total,sum):
-        echo sum
-        break infinite_loop;
+    for line in lines f_name:
+      result += parseInt(line)
+      if running_total.contains(result):
+        # when the first duplicate total is reached
+        return result
       else:
-        running_total.incl(sum)
+        # keep track of all previous totals
+        running_total.incl(result)
 
-#for value in running_total.items:
-#  echo "Got ", value
+echo first_duplicate_total("input.txt")
