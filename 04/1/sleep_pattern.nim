@@ -15,8 +15,11 @@ var
   sleep_end: int
   sleepiest_guard: int
   sleepiest_guard_total = -1
+  sleepiest_guard_minute: int
+  sleepiest_guard_minute_total = -1
   sleepiest_minute: int
-  sleepiest_minute_total = -1
+  sleepiest_minute_max = -1
+  sleepiest_minute_guard: int
 
 # get records into a sequence
 for line in lines "input.txt":
@@ -51,13 +54,18 @@ for record in records:
 
 # find the most likely minute for the sleepiest guard to be asleep
 for index, minute_total in guard_patterns[sleepiest_guard].sleep_freq:
-  if minute_total > sleepiest_minute_total:
-    sleepiest_minute_total = minute_total
-    sleepiest_minute = index
+  if minute_total > sleepiest_guard_minute_total:
+    sleepiest_guard_minute_total = minute_total
+    sleepiest_guard_minute = index
+  
+echo "Part 1: ", sleepiest_guard * sleepiest_guard_minute
 
-echo "sleepiest guard: ", sleepiest_guard
-echo "sleepiest min: ", sleepiest_minute
-echo "sleepiest pattern: ", guard_patterns[sleepiest_guard].sleep_freq
-echo "sleepiest total: ", guard_patterns[sleepiest_guard].total_sleep
+# find the most likely minute for any guard to be asleep
+for guard_id, guard_pattern in guard_patterns:
+  for index, minute in guard_pattern.sleep_freq:
+    if minute > sleepiest_minute_max:
+      sleepiest_minute_max = minute
+      sleepiest_minute = index
+      sleepiest_minute_guard = guard_id
 
-echo "Part 1: ", sleepiest_guard * sleepiest_minute
+echo "Part 2: ", sleepiest_minute_guard * sleepiest_minute
