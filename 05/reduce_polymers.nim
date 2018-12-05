@@ -55,7 +55,6 @@ for c in 65 .. 90:
 
 # find the smallest polymer chain length
 for index, poly in polymers:
-  echo index, poly.len()
   if poly.len() < shortest_polymer_length:
     shortest_polymer_length = poly.len()
     shortest_polymer = (index + 65).chr()
