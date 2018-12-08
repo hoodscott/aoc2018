@@ -34,6 +34,18 @@ proc sum_meta(node: Node): int =
   for child in node.children:
     result += child.sum_meta()
 
+# sum the total value of metadata entries
+proc calc_value(node: Node): int =
+  # if node has no children
+  if node.num_children == 0:
+    # node value is just sum of metadata
+    return node.metadata.foldl(a + b)
+  # otherwise go through metadata entries
+  for meta in node.metadata:
+    # make sure we have a child node at this index
+    if meta > 0 and meta <= node.num_children:
+      result += node.children[meta - 1].calc_value()
+
 var
   root: Node
   input_sequence: seq[int]
@@ -43,3 +55,5 @@ input_sequence = read_file_into_seq("input.txt")
 root = input_sequence.create_node()
 
 echo "Part 1: ", root.sum_meta()
+
+echo "Part 2: ", root.calc_value()
