@@ -1,18 +1,18 @@
-import strutils, sequtils
+import strutils, sequtils, re
 
 type
-  Position = ref object of RootObj
-    x_pos*: int
-    y_pos*: int
-  Light = ref object of RootObj
-    position*: Position
-    x_velocity*: int
-    y_velocity*: int
-  Bounds = ref object of RootObj
-    min_x*: int
-    max_x*: int
-    min_y*: int
-    max_y*: int
+  Position = ref object
+    x_pos: int
+    y_pos: int
+  Light = ref object
+    position: Position
+    x_velocity: int
+    y_velocity: int
+  Bounds = ref object
+    min_x: int
+    max_x: int
+    min_y: int
+    max_y: int
 
 # read file to get initial positions and velocities
 proc get_initial_points(f_name: string): seq[Light] =
@@ -20,9 +20,9 @@ proc get_initial_points(f_name: string): seq[Light] =
     bounds = Bounds(min_x: high(int), max_x: low(int), min_y: high(int), max_y: low(int))
   for line in lines f_name:
     var
-      line_arr = line.replace(" ").split({',', '<', '>'})
-    result.add(Light(position: Position(x_pos: line_arr[1].parseInt(), y_pos: line_arr[2].parseInt()),
-                      x_velocity: line_arr[4].parseInt(), y_velocity: line_arr[5].parseInt()))
+      line_arr = line.findAll(re"-?\d+").map(parseInt)
+    result.add(Light(position: Position(x_pos: line_arr[0], y_pos: line_arr[1]),
+                      x_velocity: line_arr[2], y_velocity: line_arr[3]))
 
 # calculate the smallest box that fits all lights
 proc calc_bounds(l: seq[Light]): Bounds =
