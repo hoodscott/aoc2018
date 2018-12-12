@@ -135,3 +135,12 @@ for gen in 1 .. 20:
   echo "Gen ", gen, ": ", leftmost_pot.print_pots()
 
 echo "Part 1: ", leftmost_pot.sum()
+
+for gen in 21 .. 50000000000:
+  leftmost_pot = leftmost_pot.tick(rules)
+  leftmost_pot = leftmost_pot.add_space()
+  if gen mod 10000 == 0:
+    echo "Gen ", gen, ": ", leftmost_pot.print_pots()
+    echo "Running Total: ", leftmost_pot.sum()
+
+echo "Part 2: ", leftmost_pot.sum()
