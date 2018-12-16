@@ -5,10 +5,12 @@ type
 
 var
   all_recipies: Recipes
+  running_recipes: Recipes
   limit = 880751
   first_elf = 0
   second_elf = 1
   scores: string
+  str_limit = limit.intToStr()
 
 # initial recipes
 all_recipies.add(3)
@@ -32,3 +34,43 @@ for i in limit ..< limit + 10:
   scores.add(all_recipies[i].intToStr())
 
 echo "Part 1: ", scores
+
+# reset initial recipes and positions
+first_elf = 0
+second_elf = 1
+running_recipes.add(3)
+running_recipes.add(7)
+
+block create_recipes:
+  while true:
+    var
+      total = running_recipes[first_elf] + running_recipes[second_elf]
+      tens: bool
+      possible_score: int
+      recipe_compare: string
+    # if total is 2 digits, only possible option is 1 in the tens position
+    if total > 9:
+      running_recipes.add(1)
+      tens = true
+    # add the units
+    running_recipes.add(total mod 10)
+    # get new elf positions
+    first_elf = (first_elf + 1 + running_recipes[first_elf]) mod running_recipes.len()
+    second_elf = (second_elf + 1 + running_recipes[second_elf]) mod running_recipes.len()
+    # check the recipes at the end
+    if running_recipes.len() >= str_limit.len():
+      for i in running_recipes.len() - str_limit.len() ..< running_recipes.len():
+        recipe_compare.add(running_recipes[i].intToStr())
+      # if the end of the running recipes matches the input, break out the loop and show the result
+      if recipe_compare == str_limit:
+        echo "Part 2: ", running_recipes.len() - str_limit.len()
+        break create_recipes
+      # if we added two recipes in this iteration, we need to check one in from the end aswell
+      if tens and running_recipes.len() >= str_limit.len() + 1:
+        recipe_compare = ""
+        for i in running_recipes.len() - str_limit.len() - 1 ..< running_recipes.len() - 1:
+          recipe_compare.add(running_recipes[i].intToStr())
+        # if the end of the running recipes matches the input, break out the loop and show the result
+        if recipe_compare == str_limit:
+          echo "Part 2: ", running_recipes.len() - str_limit.len() - 1
+          break create_recipes
