@@ -7,7 +7,7 @@ type
     before: Registers
     instruction: Instruction
     after: Registers
-    possible_codes: int
+    possible_codes: seq[string]
 
 proc build_samples(f_name: string): seq[Sample] =
   var
@@ -131,45 +131,108 @@ proc eqrr(before: Registers, instr: Instruction): Registers =
 var
   all_samples: seq[Sample]
   possible_count: int
+  reg: Registers = newSeq[int](4)
 
 all_samples = build_samples("input.txt")
 
 # try every instruction on every sample
 for s in all_samples:
+  # 9 == addr
   if s.before.addr(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("addr")
+  # 6 == addi
   if s.before.addi(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("addi")
+  # 8 == mulr
   if s.before.mulr(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("mulr")
+  # 0 == muli
   if s.before.muli(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("muli")
+  # 14
   if s.before.banr(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("banr")
+  # 11
   if s.before.bani(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("bani")
+  # 1 == borr
   if s.before.borr(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("borr")
+  # 10 == bori
   if s.before.bori(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("bori")
+  # 7
   if s.before.setr(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("setr")
+  # 12 = seti
   if s.before.seti(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("seti")
+  # 15
   if s.before.gtir(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("gtir")
+  # 2 == gtri
   if s.before.gtri(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("gtri")
+  # 4
   if s.before.gtrr(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("gtrr")
+  # 5
   if s.before.eqir(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("eqir")
+  # 3
   if s.before.eqri(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("eqri")
+  # 13
   if s.before.eqrr(s.instruction) == s.after:
-    s.possible_codes.inc()
+    s.possible_codes.add("eqrr")
   # count how many possible opcodes there are for each
-  if s.possible_codes >= 3:
+  if s.possible_codes.len() >= 1:
+    # echo s.instruction, ", ", s.possible_codes
     possible_count.inc()
 
 echo "Part 1: ", possible_count
+
+# read through the instructions
+for line in lines "input2.txt":
+  var
+    instr: Instruction = line.findAll(re"-?\d+").map(parseInt)
+  # perform the correct operation
+  case instr[0]:
+    of 0:
+      reg = reg.muli(instr)
+    of 1:
+      reg = reg.borr(instr)
+    of 2:
+      reg = reg.gtri(instr)
+    of 3:
+      reg = reg.eqri(instr)
+    of 4:
+      reg = reg.gtrr(instr)
+    of 5:
+      reg = reg.eqir(instr)
+    of 6:
+      reg = reg.addi(instr)
+    of 7:
+      reg = reg.setr(instr)
+    of 8:
+      reg = reg.mulr(instr)
+    of 9:
+      reg = reg.addr(instr)
+    of 10:
+      reg = reg.bori(instr)
+    of 11:
+      reg = reg.bani(instr)
+    of 12:
+      reg = reg.seti(instr)
+    of 13:
+      reg = reg.eqrr(instr)
+    of 14:
+      reg = reg.banr(instr)
+    of 15:
+      reg = reg.gtir(instr)
+    else:
+      echo "continue"
+      continue
+
+echo reg
+echo "Part 2: ", reg[0]
