@@ -198,7 +198,7 @@ var
 
 board = build_tracks(input_file)
 
-# board.print_track()
+board.print_track()
 
 while not collision[0]:
   (collision, board) = board.tick()
