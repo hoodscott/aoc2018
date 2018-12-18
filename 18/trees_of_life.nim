@@ -163,7 +163,7 @@ proc count_resources(current_board: Landscape): int =
 var
   board: Landscape
   input_file = "input.txt"
-  time = 1000000000
+  time = 10
 
 # load initial state
 board = build_tracks(input_file)
@@ -178,3 +178,16 @@ for sec in 1 .. time:
   board.print_track()
 
 echo "Part 1: ", board.count_resources()
+
+# reload initial state
+board = build_tracks(input_file)
+
+time = 1000000000
+
+for sec in 1 .. time:
+  # calculate the landscape after one 'tick' of time
+  board = board.tick()
+  # sequence repeats every 35 cycles (and 1 billion mod 35 is 20)
+  # so all these are the answer
+  if sec mod 35 == 20:
+    echo "Gen ", sec, " ", board.count_resources()
