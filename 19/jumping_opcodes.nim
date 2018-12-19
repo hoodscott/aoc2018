@@ -117,10 +117,10 @@ var
   prog: Program
   instr_pointer: int
   reg: Registers = newSeq[int](6)
+  count: int
+  r1 = 10551410
 
 (instr_pointer, prog) = read_program("input.txt")
-
-echo instr_pointer
 
 while reg[instr_pointer] < prog.len():
   var
@@ -164,3 +164,11 @@ while reg[instr_pointer] < prog.len():
   reg[instr_pointer].inc()
 
 echo "Part 1: ", reg[0]
+
+# Sum of factors of r1
+# see input_explained.txt for details on how r1 was calculated
+# and why we are performing this calculation
+for i in 1 .. r1:
+  if r1 mod i == 0:
+    count.inc(i)
+echo "Part 2: ", count

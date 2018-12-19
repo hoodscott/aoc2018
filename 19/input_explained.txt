@@ -1,0 +1,59 @@
+#VARIABLES
+R0 = RESULT, R1 = TARGET, R2&R3 = COUNTERS, R4 = TEMP, R5 = INSTRUCTION POINTER
+
+PROGRAM RESURNS THREE TIMES THE FACTORS OF R1
+
+# PROGRAM BEGINS
+0  addi 5 16 5 # r5 = r5 + 16 (goto 17) # SKIP TO SETUP
+
+# INIT R2 AND R3 TO 1
+1  seti 1 0 3 # r3 = 1
+2  seti 1 2 2 # r2 = 1
+
+# COMPARISON BLOCK
+# IF R2 * R3 == R1 THEN ADD R3 TO R0
+3  mulr 3 2 4 # r4 = r2 * r3
+4  eqrr 4 1 4 # r4 = r4 == r1
+5  addr 4 5 5 # r3 = r4 + r5 (skip 6 if 4 is true)
+6  addi 5 1 5 # r5 = r5 + 1 (goto 8)
+7  addr 3 0 0 # r0 = r3 + r0
+
+# INCREMENT R2, IF R2 IS LESS THAN R1 THEN GO BACK TO COMPARISON BLOCK
+8  addi 2 1 2 # r2 = r2 + 1
+9  gtrr 2 1 4 # r4 = r2 > r1
+10 addr 5 4 5 # r5 = r5 + r4 (skip 11 if 9 is true)
+11 seti 2 7 5 # r5 = 2 (goto 3)
+
+# INCREMENT R3, IF R3 IS LESS THAN R1 THEN GO BACK TO COMPARISON BLOCK
+# (ONE LINE EARLIER THAN PREVIOUS JUMP SO WE CAN RESET R2)
+# IF R3 >= R1 THEN EXIT THE PROGRAM
+12 addi 3 1 3 # r3 = r3 + 1
+13 gtrr 3 1 4 # r4 = r3 > r1
+14 addr 4 5 5 # r5 = r4 + r5 (skip 15 if 13 is true)
+15 seti 1 3 5 # r5 = 1 (goto 2)
+16 mulr 5 5 5 # r5 = r5 * r5 (END OF PROGRAM)
+
+# BEGIN SETUP
+# CREATE LARGE NUMBER IN R1 USING R4 AS TEMP VAR
+17 addi 1 2 1  # r1 = 2 + r1 (2)
+18 mulr 1 1 1  # r1 = r1^2 (4)
+19 mulr 5 1 1  # r1 = 19 * r1 (76)
+20 muli 1 11 1 # r1 = r1 * 11 (836)
+21 addi 4 7 4  # r4 = r4 + 7 (7)
+22 mulr 4 5 4  # r4 = r4 * 22 (154)
+23 addi 4 20 4 # r4 = r4 + 20 (174)
+24 addr 1 4 1  # r1 = r1 + r4 (1010)
+25 addr 5 0 5  # r5 = r5 + r0 (goto 27 for part 2)
+
+26 seti 0 4 5  # r5 = 0 (goto 1 but skipped on part 2 when r0 = 1 initially)
+
+27 setr 5 9 4  # r4 = 27 (27)
+28 mulr 4 5 4  # r4 = r4 * 28 (756)
+29 addr 5 4 4  # r4 = 29 + r4 (785)
+30 mulr 5 4 4  # r4 = 30 * r4 (23550)
+31 muli 4 14 4 # r4 = r4 * 14 (329700)
+32 mulr 4 5 4  # r4 = r4 * 32 (10550400)
+33 addr 1 4 1  # r1 = r1 + r4 (10551410)
+34 seti 0 2 0  # r0 = 0 (resets the result)
+35 seti 0 5 5  # r5 = 0 (goto 1)
+# END SETUP
