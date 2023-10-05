@@ -10,7 +10,10 @@ import hashes
 # given a map of initial state of combat - simulate rounds until one unit cannot
 # find a target and return the round number * sum of hp of all remaining units
 
-# part 2 -
+# part 2 - while not elfWin:
+# slowly increment the power of elf attacks until they have just enough to win
+# without any elf dying then return the round number * sum of remaining unit hp
+# for that scenario
 
 type
   Pos = ref object
@@ -333,3 +336,46 @@ if debug:
   print_battlefield(battlefield, units)
 
 echo "Part 1: ", roundNum * sum_hp(units)
+
+var
+  elfWin = false
+  elfAttack = 3
+
+while not elfWin:
+  (battlefield, units) = read_file(input_file)
+  var
+    elfCount = 0
+    roundNum = 0
+
+  # try a little more power
+  elfAttack.inc()
+  for unit in units:
+    if unit.faction == Elf:
+      unit.attack = elfAttack
+      elfCount.inc()
+
+  while true:
+    if roundNum == 505:
+      break
+
+    (gameOver, battlefield, units) = simulate_round(battlefield, units)
+    units = units.filterIt(not it.isDead)
+
+    if gameOver:
+      break
+
+    roundNum.inc(1)
+
+  for unit in units:
+    if not unit.isDead:
+      case unit.faction:
+        of Goblin:
+          break
+        of Elf:
+          elfCount.dec()
+
+  if elfCount == 0:
+    elfWin = true
+    if debug:
+      print_battlefield(battlefield, units)
+    echo "Part 2: ", roundNum * sum_hp(units)
