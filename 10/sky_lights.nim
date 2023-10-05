@@ -1,5 +1,12 @@
 import strutils, sequtils, re
 
+# part 1 - display
+# given list of position and velocity 2d vectors, simulate points until they
+# show a message, then print this message
+
+# part 2 - echo seconds
+# same as above, but print the time taken in seconds for message to appear
+
 type
   Position = ref object
     x_pos: int
@@ -16,8 +23,6 @@ type
 
 # read file to get initial positions and velocities
 proc get_initial_points(f_name: string): seq[Light] =
-  var
-    bounds = Bounds(min_x: high(int), max_x: low(int), min_y: high(int), max_y: low(int))
   for line in lines f_name:
     var
       line_arr = line.findAll(re"-?\d+").map(parseInt)
@@ -26,22 +31,22 @@ proc get_initial_points(f_name: string): seq[Light] =
 
 # calculate the smallest box that fits all lights
 proc calc_bounds(l: seq[Light]): Bounds =
-  result = Bounds(min_x: l.foldl(min(a,b.position.x_pos), high(int)),
-                  max_x: l.foldl(max(a,b.position.x_pos), low(int)),
-                  min_y: l.foldl(min(a,b.position.y_pos), high(int)),
-                  max_y: l.foldl(max(a,b.position.y_pos), low(int)))
+  result = Bounds(min_x: l.foldl(min(a, b.position.x_pos), high(int)),
+                  max_x: l.foldl(max(a, b.position.x_pos), low(int)),
+                  min_y: l.foldl(min(a, b.position.y_pos), high(int)),
+                  max_y: l.foldl(max(a, b.position.y_pos), low(int)))
 
 # show the lights in a grid
 proc display(lights: seq[Light], bounds: Bounds): void =
+  echo "Part 1:"
   for y in bounds.min_y .. bounds.max_y:
-    var
-      line: string
+    var line: string
     for x in bounds.min_x .. bounds.max_x:
-      var
-        pixel = '.'
+      var pixel = ' '
       for l in lights:
         if l.position.x_pos == x and l.position.y_pos == y:
           pixel = '#'
+          break
       line.add(pixel)
     echo line
 
@@ -73,9 +78,9 @@ while true:
   lights.tick()
   # calculate the smallest box that fits all lights
   boundary = lights.calc_bounds()
-  echo "After ", seconds, " second(s), vertical boundary is: ", boundary.max_y - boundary.min_y
   # once the boundary is 10 high (height of letters),
   if boundary.max_y - boundary.min_y < 10:
-    # we can display the letter and stop the loop as the lights will begin to diverge
-    lights.display(boundary)
+    # display the letter and stop the loop as the lights will begin to diverge
+    display(lights, boundary)
+    echo "Part 2: ", seconds
     break

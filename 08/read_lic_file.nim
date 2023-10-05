@@ -1,5 +1,16 @@
 import strutils, sequtils
 
+# part 1 - sum_meta
+# given list of integers representing nodes, where first int indicates the
+# number of child nodes, second int the number of metadata ints, next series of
+# ints are the child node numbers, then last few ints are the actual metadata ints.
+# return the sum of all metadata ints
+
+# part 2 - calc_value
+# given the above input, calculate the node's value as either its sum of metadata
+# if it is a leaf node or use its metadata to index its child nodes values and sum
+# those instead (if index does not exist then default to 0)
+
 type
   Node = ref object of RootObj
     num_children*: int
@@ -21,7 +32,7 @@ proc create_node(sequence: var seq[int]): Node =
   # create the required number of children
   for child in 1 .. result.num_children:
     # add a child node
-    result.children.add(sequence.create_node)
+    result.children.add(create_node(sequence))
   # create the required number of metadata entries
   for meta in 1 .. result.num_metadata:
     # shift the first entry off as metadata
@@ -36,15 +47,14 @@ proc sum_meta(node: Node): int =
 
 # sum the total value of metadata entries
 proc calc_value(node: Node): int =
-  # if node has no children
+  # if node has no children, node value is just sum of metadata
   if node.num_children == 0:
-    # node value is just sum of metadata
     return node.metadata.foldl(a + b)
   # otherwise go through metadata entries
   for meta in node.metadata:
-    # make sure we have a child node at this index
+    # only add valid child node values
     if meta > 0 and meta <= node.num_children:
-      result += node.children[meta - 1].calc_value()
+      result += calc_value(node.children[meta - 1])
 
 var
   root: Node

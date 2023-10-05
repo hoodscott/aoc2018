@@ -1,9 +1,17 @@
 import strutils
 
-# read units into a sequence
-# if any uppercase and lowercase letters are adjacent,
-# they are removed from the sequence
-proc read_file(f_name: string): seq[char] = 
+# part 1 - read_file
+# given input of string of upper and lowercase letters where adjacent letters
+# in opposite cases combine/reduce to leave nothing, simulate the reduction and
+# return the length of the reduced string
+
+# part 2 - process*26 then find
+# given same as above, see which letter of the alphabet gives the lowest resulting
+# polymer when its upper/lowercase letters are removed before processing.  return
+# the shortest length
+
+
+proc read_file(f_name: string): seq[char] =
   var
     length: int
   for line in lines f_name:
@@ -32,7 +40,7 @@ proc filter_polymer(poly: seq[char], filter: int): seq[char] =
     # and the last two characters are 32 bytes away in ASCII
     # (upper and lowercase version of same character)
     while length > 1 and (result[length - 1].int() - result[length - 2].int()).abs() == 32:
-      # delete these two units
+      # reduce these two units
       result.del(length - 1)
       result.del(length - 2)
       length = result.len

@@ -1,5 +1,17 @@
 import sequtils
 
+# part 1 - sum_size == 3
+# given an nxn square grid, where each point has a power level found by taking
+# the rackID (x coord + 10) * y coord + grid serial number (puzzle input), taking
+# only the hundreds digit (or 0 if less than 100), then subtracting 5.
+# find the 3x3 square in this grid that has the largest total power and return
+# the top left coord of this square
+
+# part 2 - for sum_size in 1 .. 300:
+# same as above but find any sized square in the grid that has the largest total
+# power and return the top left coord of this square along with its size
+# solution is brute force to takes a while...
+
 type
   Point = ref object
     x_pos: int
@@ -20,8 +32,9 @@ proc power_levels(grid: var seq[seq[int]], width: int, serial: int): seq[seq[int
       grid[y - 1][x - 1] = calc_power_level(x, y, serial)
   return grid
 
-# create a grid of 3x3 cell sums
-proc calc_sums(max_grid: var seq[seq[int]], grid: seq[seq[int]], width: int, sum_size: int): seq[seq[int]] =
+# create a grid of widthXwidth cell sums
+proc calc_sums(max_grid: var seq[seq[int]], grid: seq[seq[int]], width: int,
+    sum_size: int): seq[seq[int]] =
   for x in 0 .. width - 1:
     for y in 0 .. width - 1:
       for x1 in x .. x + sum_size - 1:
@@ -34,6 +47,7 @@ var
   width = 300
   grid = newSeqWith(width, newSeq[int](width))
   max_coord: Point
+  debug = false
 
 # create grid with power levels
 grid = grid.power_levels(width, input)
@@ -41,7 +55,7 @@ grid = grid.power_levels(width, input)
 max_coord = Point(x_pos: 0, y_pos: 0, power: grid[0][0], width: 1)
 
 # create grid with sums
-for sum_size in 1 .. 300: 
+for sum_size in 1 .. 300:
   var
     grid_width = width - sum_size + 1
     max_grid = newSeqWith(grid_width, newSeq[int](grid_width))
@@ -57,11 +71,13 @@ for sum_size in 1 .. 300:
         max_coord.width = sum_size
 
   if sum_size == 3:
-    echo "Part 1: ", max_coord.x_pos + 1, ",", max_coord.y_pos + 1, " (", max_coord.power, ")"
+    echo "Part 1: ", max_coord.x_pos + 1, ",", max_coord.y_pos + 1, " (",
+        max_coord.power, ")"
 
-  echo "Running Max at ", sum_size, "x", sum_size
-  echo max_coord.x_pos + 1, ",", max_coord.y_pos + 1, ",", 
+  if debug:
+    echo "Running Max at ", sum_size, "x", sum_size
+    echo max_coord.x_pos + 1, ",", max_coord.y_pos + 1, ",",
        max_coord.width, " (", max_coord.power, ")"
 
-echo "Part 2: ", max_coord.x_pos + 1, ",", max_coord.y_pos + 1, ",", 
+echo "Part 2: ", max_coord.x_pos + 1, ",", max_coord.y_pos + 1, ",",
       max_coord.width, " (", max_coord.power, ")"

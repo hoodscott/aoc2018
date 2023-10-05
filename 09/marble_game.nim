@@ -1,5 +1,18 @@
 import strutils, sequtils
 
+# part 1 - for in inner
+# starting with a circle containing just marble 0 (current), insert next numbered
+# marble between marbles that are 1 and 2 away in clockwise direction.  inserted
+# marble becomes new current. if marbe to be placed is multiple of 23, it is
+# instead added to player score, the marble 7 away from current in counter-clockwise
+# direction is removed and added to player score, and new current is one marble
+# clockwise of removed marble.
+# game repeats until final score matches that in input file (number of players
+# also found in input)
+
+# part 2 - for in outer
+# same as above but what if the last marble's score was 100 times larger
+
 type Marble = ref object of RootObj
   value*: int
   prev*: Marble
@@ -26,7 +39,7 @@ proc delete_marble(m: Marble): Marble =
   # return next marble
   return m.next
 
-# add this marble from the double linked list
+# add this marble to the double linked list
 proc insert_marble(m: Marble, v: int): Marble =
   var
     new_marble = Marble(value: v)
@@ -51,11 +64,8 @@ var
 # read file to get game parameters
 (num_players, num_marbles) = get_game_params("input.txt")
 
-# make last marble 100 times larger
-num_marbles_big = num_marbles * 100
-
 # initialise scores sequence with one entry per player
-scores = newSeqWith(num_players,0)
+scores = newSeqWith(num_players, 0)
 
 # game begins with just the initial zero-value marble
 current_marble = Marble(value: 0)
@@ -63,6 +73,9 @@ current_marble = Marble(value: 0)
 # double-link the marble to itself
 current_marble.next = current_marble
 current_marble.prev = current_marble
+
+# make last marble 100 times larger
+num_marbles_big = num_marbles * 100
 
 # loop from 1 to number of marbles
 for marble in 1 .. num_marbles_big:

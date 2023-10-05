@@ -1,4 +1,13 @@
-import strutils, sequtils
+import strutils
+
+# part 1 - largest_single_area
+# given a list of 2d coords, find areas in 2d space that are closest to a single
+# point (by manhattan distance), and return the size of the largest non-infinite
+# area
+
+# part 2 - find_largest_shared_area
+# give a list of 2d coords, find size of area where all points are less than
+# 100_000 units total manhattan distance to all coords
 
 type
   Coords = ref object of RootObj
@@ -10,12 +19,12 @@ type
     distance_total*: int
 
 # read file in as a sequence of coordinates
-proc read_file(f_name: string):  seq[Coords] =
+proc read_file(f_name: string): seq[Coords] =
   for line in lines f_name:
     result.add(Coords(x_pos: line.split(", ")[0].parseInt(),
                       y_pos: line.split(", ")[1].parseInt()))
 
-# build a grid big enough to fit our co-ords
+# build a grid big enough to fit our coords
 # with points to be filled in later on another pass
 proc create_grid(width: int, height: int): seq[seq[Point]] =
   for y in 0 .. height:
@@ -29,7 +38,8 @@ proc calc_manhattan_distance(x1, y1, x2, y2: int): int =
   return (x1 - x2).abs() + (y1 - y2).abs()
 
 # fill in the grid with the points closest to each coord
-proc add_coordinates(base_grid: seq[seq[Point]], coordinates: seq[Coords]): seq[seq[Point]] =
+proc add_coordinates(base_grid: seq[seq[Point]], coordinates: seq[Coords]): seq[
+    seq[Point]] =
   for index, coord in coordinates:
     for y, row in base_grid:
       for x, point in row:
@@ -70,7 +80,8 @@ proc find_infinite_areas(full_grid: seq[seq[Point]]): set[int16] =
       result.incl(full_grid[y][width - 1].id.int16)
 
 # find the coord with the largest non-infinite area surrounding it
-proc find_largest_single_area(full_grid: seq[seq[Point]], coordinates: seq[Coords], excluded: set[int16]): int =
+proc find_largest_single_area(full_grid: seq[seq[Point]], coordinates: seq[
+    Coords], excluded: set[int16]): int =
   var
     largest_index: int
   result = -1
@@ -110,11 +121,11 @@ var
 coords = read_file("input.txt")
 
 # get the max and min coords so we can create a reasonably sized 2d sequence
-for x in coords:
-  if x.x_pos > max_x:
-    max_x = x.x_pos
-  if x.y_pos > max_y:
-    max_y = x.y_pos
+for coord in coords:
+  if coord.x_pos > max_x:
+    max_x = coord.x_pos
+  if coord.y_pos > max_y:
+    max_y = coord.y_pos
 
 grid = create_grid(max_x, max_y)
 
