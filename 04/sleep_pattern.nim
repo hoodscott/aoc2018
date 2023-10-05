@@ -2,18 +2,29 @@ import algorithm
 import tables
 import strutils
 
+# part 1 - build_guard_pattern sleepiest_guard_minute
+# given list of timestamps and actions (guard begins shift/falls asleep/wakes up)
+# not necessarily in chronological order, find the guard who has spent the most
+# time asleep and return the minute that they spend asleep most often.
+
+# part 2 - sleepiest_minute
+# given list of timestamps and actions (guard begins shift/falls asleep/wakes up)
+# not necessarily in chronological order, find the guard who has spent the same
+# minute asleep more times that any other guard has spent a minute asleep.
+# return the guard id * their most asleep minute
+
 type
   SleepPattern = ref object of RootObj
     total_sleep*: int
     sleep_freq*: seq[int]
 
-proc read_file(f_name: string): seq[string] = 
+proc read_file(f_name: string): seq[string] =
   for line in lines f_name:
     result.add(line)
 
 # builds the cumulative patter for each guard
 # keep track of the sleepiest guard while building this
-proc build_guard_pattern(guard_records: seq[string]): (Table[int, SleepPattern], int) = 
+proc build_guard_pattern(guard_records: seq[string]): (Table[int, SleepPattern], int) =
   var
     current_guard: int
     sleep_start: int
@@ -29,7 +40,8 @@ proc build_guard_pattern(guard_records: seq[string]): (Table[int, SleepPattern],
       # if new guard - change pointer and create object if necessary
       current_guard = record.split()[3].replace("#").parseInt()
       if not guard_patterns.hasKey(current_guard):
-        guard_patterns.add(current_guard, SleepPattern(total_sleep: 0, sleep_freq: newSeq[int](60)))
+        guard_patterns[current_guard] = SleepPattern(total_sleep: 0,
+            sleep_freq: newSeq[int](60))
     of "falls":
       # if sleep - parse start time from string and remember
       sleep_start = record.replace("]").split({' ', ':'})[2].parseInt()
@@ -45,7 +57,8 @@ proc build_guard_pattern(guard_records: seq[string]): (Table[int, SleepPattern],
         sleepiest_guard_id = current_guard
   return (guard_patterns, sleepiest_guard_id)
 
-proc sleepiest_guard_minute(patterns: Table[int, SleepPattern], guard_id: int): int =
+proc sleepiest_guard_minute(patterns: Table[int, SleepPattern],
+    guard_id: int): int =
   var
     sleepiest_minute: int
     sleepiest_frequency = -1

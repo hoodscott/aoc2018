@@ -1,6 +1,14 @@
 import strutils
 import sequtils
 
+# part 1 - double_requested_total()
+# given a list of claims (#id @ position: size)
+# find how many square inches are claimed more than once
+
+# part 2 - no_overlap()
+# given a list of claims (#id @ position: size)
+# find the id of the claim that does not overlap any other
+
 type
   Claim = ref object of RootObj
     id*: string
@@ -11,7 +19,7 @@ type
 
 # get claims into a sequence
 # also calculates the maximum x and y values required later
-proc import_claims (f_name: string): (seq[Claim], int, int) = 
+proc import_claims (f_name: string): (seq[Claim], int, int) =
   var
     read_claims: seq[Claim]
     max_x = 0
@@ -22,8 +30,10 @@ proc import_claims (f_name: string): (seq[Claim], int, int) =
       input_claim: Claim
     claim_array = line.replace(" ").split({'@', ',', ':', 'x'})
     input_claim = Claim(id: claim_array[0],
-                        start_X: claim_array[1].parseInt(), start_y: claim_array[2].parseInt(),
-                        width: claim_array[3].parseInt(), height: claim_array[4].parseInt())
+                        start_X: claim_array[1].parseInt(),
+                            start_y: claim_array[2].parseInt(),
+                        width: claim_array[3].parseInt(), height: claim_array[
+                            4].parseInt())
     # find the max x and y values so we can create the map
     if input_claim.start_X + input_claim.width > max_x:
       max_x = input_claim.start_X + input_claim.width

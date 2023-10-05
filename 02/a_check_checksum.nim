@@ -1,6 +1,10 @@
 import strutils
 
-proc calc_checksum (f_name: string): int = 
+# given a list of strings, calculate the checksum = (total strings that contain
+# exactly 2 repeated  characters) * (total strings that contain exactly 3
+# repeated characters)
+
+proc calc_checksum (f_name: string): int =
   var
     num_twos = 0
     num_threes = 0
@@ -11,20 +15,20 @@ proc calc_checksum (f_name: string): int =
       exactly_three = false
     for character in line:
       var
-        count_chars = count(line,character)
+        count_chars = count(line, character)
       if count_chars == 2:
         exactly_two = true
       elif count_chars == 3:
         exactly_three = true
-      #once we find exactly two and three matches
-      #we can stop searching on this line
+      # once we find exactly two and three matches
+      # we can stop searching on this line
       if exactly_two and exactly_three:
         break
     if exactly_two:
       num_twos.inc()
     if exactly_three:
       num_threes.inc()
-  
+
   return num_twos * num_threes
 
 echo calc_checksum("input.txt")
