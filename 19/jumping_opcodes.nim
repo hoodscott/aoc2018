@@ -1,5 +1,18 @@
 import sequtils, strutils, re
 
+# part 1 - while reg[instr_pointer] < prog.len():
+# given a list of instructions (instruction, register in_a, register in_b,
+# register out) that starts with a line telling you which register to use as
+# the instruction pointer, follow the instructions until the program halts and
+# return the value in register 0.  executing an intruction increments the value
+# in the intruction pointer's register
+
+# part 2 - for i in 1 .. r1:
+# same as above but initially register 0 has value of 1
+# (had to work out what program was doing and just do it in nim rather than
+# waiting for slow progam to complete - it is calculating the sum of the factors
+# of 10_551_410)
+
 type
   Registers = seq[int]
   Instruction = ref object
@@ -13,7 +26,8 @@ proc read_program(f_name: string): (int, Program) =
     if line.split().len() == 2:
       result[0] = line.split()[1].parseInt()
     else:
-      result[1].add(Instruction(opcode: line.split()[0], operands: line.findAll(re"-?\d+").map(parseInt)))
+      result[1].add(Instruction(opcode: line.split()[0], operands: line.findAll(
+          re"-?\d+").map(parseInt)))
 
 # stores into register C the result of adding register A and register B
 proc addr(before: Registers, instr: Instruction): Registers =
@@ -34,27 +48,29 @@ proc mulr(before: Registers, instr: Instruction): Registers =
 proc muli(before: Registers, instr: Instruction): Registers =
   result = before
   result[instr.operands[2]] = before[instr.operands[0]] * instr.operands[1]
-  
+
 # stores into register C the result of the bitwise AND of register A and register B.
 proc banr(before: Registers, instr: Instruction): Registers =
   result = before
-  result[instr.operands[2]] = before[instr.operands[0]] and before[instr.operands[1]]
+  result[instr.operands[2]] = before[instr.operands[0]] and before[
+      instr.operands[1]]
 
 # stores into register C the result of the bitwise AND of register A and value B.
 proc bani(before: Registers, instr: Instruction): Registers =
   result = before
   result[instr.operands[2]] = before[instr.operands[0]] and instr.operands[1]
-  
+
 # stores into register C the result of the bitwise OR of register A and register B.
 proc borr(before: Registers, instr: Instruction): Registers =
   result = before
-  result[instr.operands[2]] = before[instr.operands[0]] or before[instr.operands[1]]
+  result[instr.operands[2]] = before[instr.operands[0]] or before[
+      instr.operands[1]]
 
 # stores into register C the result of the bitwise OR of register A and value B.
 proc bori(before: Registers, instr: Instruction): Registers =
   result = before
   result[instr.operands[2]] = before[instr.operands[0]] or instr.operands[1]
-  
+
 # copies the contents of register A into register C. (Input B is ignored.)
 proc setr(before: Registers, instr: Instruction): Registers =
   result = before
@@ -64,7 +80,7 @@ proc setr(before: Registers, instr: Instruction): Registers =
 proc seti(before: Registers, instr: Instruction): Registers =
   result = before
   result[instr.operands[2]] = instr.operands[0]
-  
+
 # sets register C to 1 if value A is greater than register B. Otherwise, register C is set to 0.
 proc gtir(before: Registers, instr: Instruction): Registers =
   result = before
@@ -168,7 +184,7 @@ echo "Part 1: ", reg[0]
 # Sum of factors of r1
 # see input_explained.txt for details on how r1 was calculated
 # and why we are performing this calculation
-for i in 1 .. r1:
+for i in 1 .. (r1 div 2):
   if r1 mod i == 0:
     count.inc(i)
-echo "Part 2: ", count
+echo "Part 2: ", count + r1

@@ -1,5 +1,17 @@
 import sequtils, strutils, re
 
+# part 1 - for s in all_samples:
+# given a list of sets of samples (register_before, instruction, register_after)
+# where registers are integer arrays 4 long and an instruction is an opcode
+# (as integer), two inputs, and one output.  return the number of samples that
+# behave the same for three or more multiple opcodes
+
+# part 2 - for line in lines "input_program.txt":
+# with above input, find out what opcode corresponds to sample integer and
+# execute progam according to those rules.  then return the value in register 0
+# (think I manually mapped int to opcode by looking at output of part 1 and
+# incrementally matching opcodes)
+
 type
   Registers = seq[int]
   Instruction = seq[int]
@@ -49,7 +61,7 @@ proc mulr(before: Registers, instr: Instruction): Registers =
 proc muli(before: Registers, instr: Instruction): Registers =
   result = before
   result[instr[3]] = before[instr[1]] * instr[2]
-  
+
 # stores into register C the result of the bitwise AND of register A and register B.
 proc banr(before: Registers, instr: Instruction): Registers =
   result = before
@@ -59,7 +71,7 @@ proc banr(before: Registers, instr: Instruction): Registers =
 proc bani(before: Registers, instr: Instruction): Registers =
   result = before
   result[instr[3]] = before[instr[1]] and instr[2]
-  
+
 # stores into register C the result of the bitwise OR of register A and register B.
 proc borr(before: Registers, instr: Instruction): Registers =
   result = before
@@ -69,7 +81,7 @@ proc borr(before: Registers, instr: Instruction): Registers =
 proc bori(before: Registers, instr: Instruction): Registers =
   result = before
   result[instr[3]] = before[instr[1]] or instr[2]
-  
+
 # copies the contents of register A into register C. (Input B is ignored.)
 proc setr(before: Registers, instr: Instruction): Registers =
   result = before
@@ -79,7 +91,7 @@ proc setr(before: Registers, instr: Instruction): Registers =
 proc seti(before: Registers, instr: Instruction): Registers =
   result = before
   result[instr[3]] = instr[1]
-  
+
 # sets register C to 1 if value A is greater than register B. Otherwise, register C is set to 0.
 proc gtir(before: Registers, instr: Instruction): Registers =
   result = before
@@ -133,7 +145,7 @@ var
   possible_count: int
   reg: Registers = newSeq[int](4)
 
-all_samples = build_samples("input.txt")
+all_samples = build_samples("input_samples.txt")
 
 # try every instruction on every sample
 for s in all_samples:
@@ -185,15 +197,14 @@ for s in all_samples:
   # 13
   if s.before.eqrr(s.instruction) == s.after:
     s.possible_codes.add("eqrr")
-  # count how many possible opcodes there are for each
-  if s.possible_codes.len() >= 1:
-    # echo s.instruction, ", ", s.possible_codes
+  # does this behave the same for more than three opcodes?
+  if s.possible_codes.len() >= 3:
     possible_count.inc()
 
 echo "Part 1: ", possible_count
 
-# read through the instructions
-for line in lines "input2.txt":
+# read the program
+for line in lines "input_program.txt":
   var
     instr: Instruction = line.findAll(re"-?\d+").map(parseInt)
   # perform the correct operation
@@ -234,5 +245,4 @@ for line in lines "input2.txt":
       echo "continue"
       continue
 
-echo reg
 echo "Part 2: ", reg[0]

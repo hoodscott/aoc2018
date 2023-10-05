@@ -1,16 +1,29 @@
-import sequtils, strutils
+import sequtils
+
+# part 1 - for sec in 1 .. 10:
+# given 2d map of forest where a cell is either open ground, trees, or lumberyard
+# simulate time where every minute each cell can change:  open areas become trees
+# if surrounded by three or more adjacent trees, trees become lumberyard if three
+# adjacent cells are lumberyards, and lumberyards only remain lumberyards if
+# adjacent to another lumberyad and trees (otherwise they go back to open ground).
+# all changes happen simulataneously.  find the resource value (number of tree
+# cells * number of lumberyards) after 10 mins
+
+# part 2 - for sec in 1 .. 1_000_000_000:
+# same as above but simulate for 1 billion minutes
+# (can see the state cycles so can leave early)
 
 type
   WoodContents {.pure.} = enum
     open, trees, lumberyard
   Landscape = seq[seq[WoodContents]]
 
-proc build_tracks(f_name: string): LandScape =
+proc build_landscape(f_name: string): LandScape =
   var
     height: int
     width: int
     y: int
-  
+
   # get the dimensions
   for line in lines f_name:
     width = line.len
@@ -18,7 +31,7 @@ proc build_tracks(f_name: string): LandScape =
 
   result = newSeqWith(height, newSeq[WoodContents](width))
 
-  # go back through the file to get the track and cart positions
+  # go back through the file to place the landscape features
   for line in lines f_name:
     for x, symbol in line:
       case symbol:
@@ -30,8 +43,8 @@ proc build_tracks(f_name: string): LandScape =
           result[y][x] = WoodContents.open
     y.inc()
 
-proc print_track(current_track: Landscape): void =
-  for y, line in current_track:
+proc print_landscape(current_landscape: Landscape): void =
+  for y, line in current_landscape:
     var
       printed_line: string
     for x, cell in line:
@@ -44,15 +57,15 @@ proc print_track(current_track: Landscape): void =
           printed_line.add('#')
     echo printed_line
 
-proc tick(current_board: Landscape): Landscape =
+proc tick(current_landscape: Landscape): Landscape =
   var
-    height = current_board.len()
-    width = current_board[0].len()
-  
+    height = current_landscape.len()
+    width = current_landscape[0].len()
+
   # copy the current board and reset all acres
   result = newSeqWith(height, newSeq[WoodContents](width))
-  
-  for y, line in current_board:
+
+  for y, line in current_landscape:
     for x, cell in line:
       var
         wooded_count: int
@@ -61,69 +74,69 @@ proc tick(current_board: Landscape): Landscape =
         # if the area not wooded, count the surrounding wooded acres
         # top left
         if x != 0 and y != 0:
-          if current_board[y - 1][x - 1] == WoodContents.trees:
+          if current_landscape[y - 1][x - 1] == WoodContents.trees:
             wooded_count.inc()
         # top
         if y != 0:
-          if current_board[y - 1][x] == WoodContents.trees:
+          if current_landscape[y - 1][x] == WoodContents.trees:
             wooded_count.inc()
         # top right
         if x < width - 1 and y != 0:
-          if current_board[y - 1][x + 1] == WoodContents.trees:
+          if current_landscape[y - 1][x + 1] == WoodContents.trees:
             wooded_count.inc()
         # left
         if x != 0:
-          if current_board[y][x - 1] == WoodContents.trees:
+          if current_landscape[y][x - 1] == WoodContents.trees:
             wooded_count.inc()
         # right
         if x < width - 1:
-          if current_board[y][x + 1] == WoodContents.trees:
+          if current_landscape[y][x + 1] == WoodContents.trees:
             wooded_count.inc()
         # bottom left
         if x != 0 and y < height - 1:
-          if current_board[y + 1][x - 1] == WoodContents.trees:
+          if current_landscape[y + 1][x - 1] == WoodContents.trees:
             wooded_count.inc()
         # bottom
         if y < height - 1:
-          if current_board[y + 1][x] == WoodContents.trees:
+          if current_landscape[y + 1][x] == WoodContents.trees:
             wooded_count.inc()
         # bottom right
         if x < width - 1 and y < height - 1:
-          if current_board[y + 1][x + 1] == WoodContents.trees:
+          if current_landscape[y + 1][x + 1] == WoodContents.trees:
             wooded_count.inc()
       if cell != WoodContents.open:
         # if the area is not open, count the surrounding lumberyards
         # top left
         if x != 0 and y != 0:
-          if current_board[y - 1][x - 1] == WoodContents.lumberyard:
+          if current_landscape[y - 1][x - 1] == WoodContents.lumberyard:
             lumber_count.inc()
         # top
         if y != 0:
-          if current_board[y - 1][x] == WoodContents.lumberyard:
+          if current_landscape[y - 1][x] == WoodContents.lumberyard:
             lumber_count.inc()
         # top right
         if x < width - 1 and y != 0:
-          if current_board[y - 1][x + 1] == WoodContents.lumberyard:
+          if current_landscape[y - 1][x + 1] == WoodContents.lumberyard:
             lumber_count.inc()
         # left
         if x != 0:
-          if current_board[y][x - 1] == WoodContents.lumberyard:
+          if current_landscape[y][x - 1] == WoodContents.lumberyard:
             lumber_count.inc()
         # right
         if x < width - 1:
-          if current_board[y][x + 1] == WoodContents.lumberyard:
+          if current_landscape[y][x + 1] == WoodContents.lumberyard:
             lumber_count.inc()
         # bottom left
         if x != 0 and y < height - 1:
-          if current_board[y + 1][x - 1] == WoodContents.lumberyard:
+          if current_landscape[y + 1][x - 1] == WoodContents.lumberyard:
             lumber_count.inc()
         # bottom
         if y < height - 1:
-          if current_board[y + 1][x] == WoodContents.lumberyard:
+          if current_landscape[y + 1][x] == WoodContents.lumberyard:
             lumber_count.inc()
         # bottom right
         if x < width - 1 and y < height - 1:
-          if current_board[y + 1][x + 1] == WoodContents.lumberyard:
+          if current_landscape[y + 1][x + 1] == WoodContents.lumberyard:
             lumber_count.inc()
       case cell:
         of WoodContents.open:
@@ -146,10 +159,10 @@ proc tick(current_board: Landscape): Landscape =
             result[y][x] = WoodContents.open
 
 # resource value is number of wooded areas multipied by number of lumberyards
-proc count_resources(current_board: Landscape): int =
+proc count_resources(current_landscape: Landscape): int =
   var
     wooded_acres, lumberyards: int
-  for line in current_board:
+  for line in current_landscape:
     for cell in line:
       case cell:
         of WoodContents.lumberyard:
@@ -161,33 +174,38 @@ proc count_resources(current_board: Landscape): int =
   return wooded_acres * lumberyards
 
 var
-  board: Landscape
+  landscape: Landscape
   input_file = "input.txt"
-  time = 10
+  debug = false
+  prev_resources = 0
 
 # load initial state
-board = build_tracks(input_file)
+landscape = build_landscape(input_file)
 
-echo "Gen 0"
-board.print_track()
+if debug:
+  echo "Gen 0"
+  landscape.print_landscape()
 
-for sec in 1 .. time:
+for minute in 1 .. 10:
   # calculate the landscape after one 'tick' of time
-  board = board.tick()
-  echo "Gen ", sec
-  board.print_track()
+  landscape = landscape.tick()
+  if debug:
+    echo "Gen ", minute
+    landscape.print_landscape()
 
-echo "Part 1: ", board.count_resources()
+echo "Part 1: ", landscape.count_resources()
 
 # reload initial state
-board = build_tracks(input_file)
+landscape = build_landscape(input_file)
 
-time = 1000000000
-
-for sec in 1 .. time:
+for minute in 1 .. 1_000_000_000:
   # calculate the landscape after one 'tick' of time
-  board = board.tick()
+  landscape = landscape.tick()
   # sequence repeats every 35 cycles (and 1 billion mod 35 is 20)
-  # so all these are the answer
-  if sec mod 35 == 20:
-    echo "Gen ", sec, " ", board.count_resources()
+  if minute mod 35 == 20:
+    let current_resources = landscape.count_resources()
+    if prev_resources == current_resources:
+      echo "Part 2: ", current_resources
+      break
+    prev_resources = current_resources
+

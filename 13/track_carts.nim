@@ -1,4 +1,15 @@
-import sequtils, strutils
+import sequtils
+
+# part 1 - while not collision[0]
+# given a map of overlapping minecart tracks with minecarts placed on them
+# with an indicated direction, simulate carts moving until there is a crash.
+# carts will decide when to turn by going left, straight, then right (looping)
+# for each intersection they come across.  return the coord of the first crash
+
+# part 2 - while board.count_carts() > 1
+# same as above but when two carts crash, remove them from the simulation and
+# continue until only one cart remains.  return the coord of this cart one tick
+# after the last crash occurs
 
 type
   Decisions {.pure.} = enum
@@ -18,7 +29,7 @@ proc build_tracks(f_name: string): seq[seq[Track]] =
     height: int
     width: int
     y: int
-  
+
   # get the dimensions
   for line in lines f_name:
     width = line.len
@@ -35,15 +46,19 @@ proc build_tracks(f_name: string): seq[seq[Track]] =
       if symbol == '<' or symbol == '>':
         track_symbol = '-'
         if symbol == '<':
-          this_cart = Cart(dir: CardinalDirections.west, next_turn: Decisions.low())
+          this_cart = Cart(dir: CardinalDirections.west,
+              next_turn: Decisions.low())
         elif symbol == '>':
-            this_cart = Cart(dir: CardinalDirections.east, next_turn: Decisions.low())
+          this_cart = Cart(dir: CardinalDirections.east,
+              next_turn: Decisions.low())
       elif symbol == '^' or symbol == 'v':
         track_symbol = '|'
         if symbol == '^':
-          this_cart = Cart(dir: CardinalDirections.north, next_turn: Decisions.low())
+          this_cart = Cart(dir: CardinalDirections.north,
+              next_turn: Decisions.low())
         elif symbol == 'v':
-            this_cart = Cart(dir: CardinalDirections.south, next_turn: Decisions.low())
+          this_cart = Cart(dir: CardinalDirections.south,
+              next_turn: Decisions.low())
       else:
         track_symbol = symbol
       result[y][x] = Track(path: track_symbol, cart: this_cart)
@@ -69,7 +84,7 @@ proc tick(current_board: seq[seq[Track]]): ((bool, int, int), seq[seq[Track]]) =
       result[1][y][x] = Track(path: cell.path, cart: cell.cart)
       if result[1][y][x].cart != nil:
         result[1][y][x].cart.moved = false
-  
+
   for y, line in result[1]:
     for x, cell in line:
       if cell.cart != nil and not cell.cart.moved:
@@ -125,7 +140,7 @@ proc tick_delete(current_board: seq[seq[Track]]): (seq[seq[Track]]) =
     for x, cell in line:
       if result[y][x].cart != nil:
         result[y][x].cart.moved = false
-  
+
   for y, line in result:
     for x, cell in line:
       if cell.cart != nil and not cell.cart.moved:
@@ -183,38 +198,37 @@ proc count_carts(current_board: seq[seq[Track]]): int =
       if cell.cart != nil:
         result.inc()
 
-proc first_cart(current_board: seq[seq[Track]]): void =
+proc echo_remaining_cart(current_board: seq[seq[Track]]): void =
   for y, line in current_board:
     for x, cell in line:
       if cell.cart != nil:
-        echo x, ", ", y
+        echo "Part 2: ", x, ", ", y
 
 var
   board: seq[seq[Track]]
-  collided: bool
   collision: (bool, int, int)
   count: int
   input_file = "input.txt"
+  debug = false
 
 board = build_tracks(input_file)
 
-board.print_track()
+if debug:
+  print_track(board)
 
 while not collision[0]:
   (collision, board) = board.tick()
-  #board.print_track()
 
 echo "Part 1: ", collision[1], ", ", collision[2]
 
 board = build_tracks(input_file)
 
-#board.print_track()
-
 while board.count_carts() > 1:
   board = board.tick_delete()
-  if count mod 1000 == 0:
-    echo "Generation: ", count, "; Num. Carts: ",board.count_carts()
+  if debug and count mod 1000 == 0:
+    echo "Generation: ", count, "; Num. Carts: ", board.count_carts()
   count.inc()
 
-echo "Generation: ", count
-board.first_cart()
+if debug:
+  echo "Generation: ", count
+echo_remaining_cart(board)

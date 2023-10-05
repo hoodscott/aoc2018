@@ -1,5 +1,16 @@
 import strutils
 
+# part 1 - while all_recipies.len() < limit + 10:
+# two scores out of ten, add them together and then add the tens and units of
+# the result to a list containing the initial two score.  then choose two new
+# scores from this list by moving 1+score positions to the right of the current
+# score indexes and repeat the process.  repeat this until there are <limit>
+# scores plus 10 more results times and return the 10 result scores
+
+# part 2 - block create_recipes:
+# repeat the above process until the scores end in <input> then return the count
+# of scores preceeding <input>
+
 type
   Recipes = seq[int]
 
@@ -7,10 +18,10 @@ var
   all_recipies: Recipes
   running_recipes: Recipes
   limit = 880751
+  str_limit = limit.intToStr()
   first_elf = 0
   second_elf = 1
   scores: string
-  str_limit = limit.intToStr()
 
 # initial recipes
 all_recipies.add(3)
@@ -46,7 +57,6 @@ block create_recipes:
     var
       total = running_recipes[first_elf] + running_recipes[second_elf]
       tens: bool
-      possible_score: int
       recipe_compare: string
     # if total is 2 digits, only possible option is 1 in the tens position
     if total > 9:
@@ -55,8 +65,10 @@ block create_recipes:
     # add the units
     running_recipes.add(total mod 10)
     # get new elf positions
-    first_elf = (first_elf + 1 + running_recipes[first_elf]) mod running_recipes.len()
-    second_elf = (second_elf + 1 + running_recipes[second_elf]) mod running_recipes.len()
+    first_elf = (first_elf + 1 + running_recipes[
+        first_elf]) mod running_recipes.len()
+    second_elf = (second_elf + 1 + running_recipes[
+        second_elf]) mod running_recipes.len()
     # check the recipes at the end
     if running_recipes.len() >= str_limit.len():
       for i in running_recipes.len() - str_limit.len() ..< running_recipes.len():
@@ -68,7 +80,8 @@ block create_recipes:
       # if we added two recipes in this iteration, we need to check one in from the end aswell
       if tens and running_recipes.len() >= str_limit.len() + 1:
         recipe_compare = ""
-        for i in running_recipes.len() - str_limit.len() - 1 ..< running_recipes.len() - 1:
+        for i in running_recipes.len() - str_limit.len() - 1 ..<
+            running_recipes.len() - 1:
           recipe_compare.add(running_recipes[i].intToStr())
         # if the end of the running recipes matches the input, break out the loop and show the result
         if recipe_compare == str_limit:
