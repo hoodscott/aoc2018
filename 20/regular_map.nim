@@ -5,11 +5,15 @@ import sets
 import strutils
 import tables
 
-# part 1 - furthestPath = findFurthestRoom(map)
+# part 1 - (furthestPath, _) = findFurthestRoom(map, Coord((x: 0, y: 0)))
 # given a regex of instructions on how rooms are connected where NESW means
 # a connection in that direction and (..|..) defines an optional path
 # create a map and return the path length of the shortest path to the most
 # distant room from 0,0
+
+# part 2 - (_, thousandDoorCount) = findFurthestRoom(map, Coord((x: 0, y: 0)))
+# same as above but return the number of rooms where the shortest path to the
+# source passes through 1_000 doors
 
 type
   Coord = tuple[
@@ -139,12 +143,13 @@ proc printMap(map: Table[Coord, Room]): void =
     echo(row2)
 
 
-proc breadthFirstSearch(map: Table[Coord, Room], source: Coord): seq[Coord] =
+proc findFurthestRoom(map: Table[Coord, Room], source: Coord): (seq[Coord], int) =
   var
     q = initDeque[seq[Coord]]()
     visited = initHashSet[Coord](1024)
+    thousandDoorCount = 0
 
-  # start bfs from source
+  # start breadth first search from source
   q.addLast @[source]
 
   # while still have cells to search
@@ -152,6 +157,9 @@ proc breadthFirstSearch(map: Table[Coord, Room], source: Coord): seq[Coord] =
     var
       currentPath = q.popFirst()
       pathEnd = currentPath[^1]
+
+    if currentPath.len > 1_000:
+      thousandDoorCount.inc()
 
     # add neighbouring cells to bfs queue
     var
@@ -179,11 +187,7 @@ proc breadthFirstSearch(map: Table[Coord, Room], source: Coord): seq[Coord] =
     # there are no more rooms to visit so this is the longest shortest path
     # to a room
     if q.len == 0:
-      return currentPath
-
-
-proc findFurthestRoom(map: Table[Coord, Room]): seq[Coord] =
-  return breadthFirstSearch(map, Coord((x: 0, y: 0)))
+      return (currentPath, thousandDoorCount)
 
 
 let
@@ -194,9 +198,9 @@ let
 if debug:
   printMap(map)
 
-let furthestPath = findFurthestRoom(map)
+let (furthestPath, thousandDoorCount) = findFurthestRoom(map, Coord((x: 0, y: 0)))
 
 echo "Part 1: ", furthestPath.len - 1
 
-
+echo "Part 2: ", thousandDoorCount
 
