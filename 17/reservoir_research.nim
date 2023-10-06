@@ -7,8 +7,8 @@ import strutils, sequtils, algorithm
 # reach.  to prevent infinite counting, only consider tiles with y values that
 # are within the same range as the input values
 
-# part 2 -
-#
+# part 2 - (..., countStillWater) = countWet(earth, minY)
+# same as above but only count the pooled up water (WaterStill)
 
 let debug = false
 
@@ -116,15 +116,22 @@ proc showEarth(e: Earth): void =
   echo ""
 
 
-proc countWet(e: Earth, minY: int): int =
+proc countWet(e: Earth, minY: int): (int, int) =
+  var total = 0
+  var totalStill = 0
+
   for y, line in e:
     if y >= minY:
       for cell in line:
         case cell.material:
           of WaterRunning, WaterStill:
-            result.inc()
+            total.inc()
+            if cell.material == WaterStill:
+              totalStill.inc()
           else:
             discard
+
+  return (total, totalStill)
 
 
 proc getSource(e: Earth): Coord =
@@ -241,4 +248,7 @@ flowFrom(earth, getSource(earth))
 if debug or displayFinal:
   showEarth earth
 
-echo "Part 1: ", countWet(earth, minY)
+var (countTotalWater, countStillWater) = countWet(earth, minY)
+
+echo "Part 1: ", countTotalWater
+echo "Part 2: ", countStillWater
