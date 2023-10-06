@@ -1,4 +1,4 @@
-import sequtils, strutils, re
+import sequtils, strutils, re, sets
 
 # part 1 - while reg[instr_pointer] < prog.len():
 # given a list of instructions (instruction, register in_a, register in_b,
@@ -10,7 +10,11 @@ import sequtils, strutils, re
 # and program begins again then program will halt at first opportunity
 
 # part 2 -
-#
+# same as above but find the lowest initial value for register 0 that causes
+# the program to halt after exacuting the most instructions.
+# tried to find by looping through executions until program starts repeating
+# itself, # then printing the value before the repeater but virtual elf code
+# was too slow so i had to rewrite in nim and run (run input.nim)
 
 type
   Registers = seq[int]
@@ -135,9 +139,8 @@ var
   prog: Program
   instr_pointer: int
   reg: Registers = newSeq[int](6)
-  # registerZero = 5597002 #toolow
-  # registerZero = 2382147 #toolow
-  registerZero = 15883666
+  debug = false
+  registerZero = 15_883_666 # shortest
 
 (instr_pointer, prog) = read_program("input.txt")
 
@@ -186,8 +189,9 @@ while reg[instr_pointer] < prog.len():
       continue
   reg[instr_pointer].inc()
   if cur_instr.opcode == "eqrr":
-    echo cur_instr
-    echo reg
+    if debug:
+      echo cur_instr
+      echo reg
+
     echo "Part 1: ", reg[1]
-
-
+    break
