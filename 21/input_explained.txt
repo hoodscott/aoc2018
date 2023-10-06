@@ -1,0 +1,57 @@
+#VARIABLES
+R0 = input, R1 = SOME VALUE WE ARE BUILDING?, R2= INNERTEMP, R3=OUTERTEMP, R4 = INSTRUCTION POINTER, R5 =TEMP
+
+#ip 4                      # 
+
+                           # SETUP?
+00  seti 123 0 1           # r1 = 123
+01  bani 1 456 1           # r1 = r1 & 456 = 123 & 456 = 72
+02  eqri 1 72 1            # r1 = r1 == 72 = 72 == 72 = 1
+03  addr 1 4 4             # r4 = r1 + r4 = 1 + 3 = 4 (then r4 INCREMENT)       # GOTO 05
+04  seti 0 0 4             # r4 = 0 (then r4 INCREMENT)                         # GOTO 01
+
+05  seti 0 7 1             # r1 = 0
+
+                           # entry point of second loop after r0==r1 comparison
+06  bori 1 65536 5         # r5 = r1 | 65536 = 0 | 65536 = 65536
+07  seti 8595037 6 1       # r1 = 8595037
+
+                           # second time through here r5 = 256? (or 255 then r1 ends up 5597002 when goto 28)
+08  bani 5 255 3           # r3 = r5 & 255 = 65536 & 255 = 0
+09  addr 1 3 1             # r1 = r1 + r3 = 8595037 + 0 = 8595037
+10  bani 1 16777215 1      # r1 = r1 & 16777215 = 8595037
+11  muli 1 65899 1         # r1 = r1 * 65899 = 8595037 * 65899 = 566404343263
+12  bani 1 16777215 1      # r1 = r1 & 16777215 = 566404343263 & 16777215 = 5531103
+13  gtir 256 5 3           # r3 = 256 > r5 = 256 > 65536 = 0
+
+                           # if r3 > r5 goto 28 else goto 17
+14  addr 3 4 4             # r4 = r3 + r4 = 0 + 14 (then r4 INCREMENT)          # GOTO 16 when r3 > 65536
+15  addi 4 1 4             # r4 = r4 + 1 = 15 + 1 = 16 (then r4 INCREMENT)      # GOTO 17
+16  seti 27 4 4            # r4 = 27 (then r4 INCREMENT)                        # GOTO 28
+
+                           # INIT R3
+17  seti 0 2 3             # r3 = 0
+
+                           # r3 comes in here as 0,1,2...256
+18  addi 3 1 2             # r2 = r3 + 1 = 0 + 1 = 1
+19  muli 2 256 2           # r2 = r2 * 256 = 1 * 256 = 256
+20  gtrr 2 5 2             # r2 = r2 > r5 = 256 > 65536 = 0
+
+                           # if r2 > r5 goto 26 else goto 24
+21  addr 2 4 4             # r4 = r2 + r4 = 0 + 21 = 21 (then r4 INCREMENT)     # GOTO 23 when r2 > 65536
+22  addi 4 1 4             # r4 = r4 + 1 = 22 + 1 = 23 (then r4 INCREMENT)      # GOTO 24
+23  seti 25 4 4            # r4 = 25 (then r4 INCREMENT)                        # GOTO 26
+
+                           # increment r3 then loop back to 18
+24  addi 3 1 3             # r3 = r3 + 1 = 0 + 1 = 1
+25  seti 17 8 4            # r4 = 17 (then r4 INCREMENT)                        # GOTO 18
+
+                           # r5 is value of r3 we just calculated above (256)
+                           # then goto 8
+26  setr 3 8 5             # r5 = r3 = 256
+27  seti 7 5 4             # r4 = 7 (then r4 increment)                         # GOTO 8
+
+                           # if r0==r1 end program else goto 6
+28  eqrr 1 0 3             # r3 = r1 == r0 = 5597002 == input = 0
+29  addr 3 4 4             # r4 = r3 + r4 = 0 + 29 = 29 (then r4 INCREMENT)     # GOTO 30
+30  seti 5 9 4             # r4 = 5 (then r4 INCREMENT)                         # GOTO 6
