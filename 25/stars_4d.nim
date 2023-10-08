@@ -5,9 +5,6 @@ import strutils, sequtils, tables
 # if any two stars are a distance of <4 away then they are in the same
 # constellation.  return the number of constellations
 
-# part 2 -
-#
-
 type
   Star = tuple[x, y, z, t: int]
 
