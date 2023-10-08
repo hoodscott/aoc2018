@@ -110,15 +110,13 @@ proc calcEP(group: Group): int =
   group.units * group.power
 
 
-proc calcDamage(attacker, defender: Group, d = false): int =
+proc calcDamage(attacker, defender: Group): int =
   if attacker.typ in defender.immunities:
     result = 0
   else:
     result = calcEP(attacker)
-    if d: echo attacker.units, " * ", attacker.power, " = ", result
 
     if attacker.typ in defender.weaknesses:
-      if d: echo "doubled due to weakness"
       result *= 2
 
 
@@ -126,14 +124,8 @@ proc dealDamage(armies: var Table[int, Group], attack: Attack): bool =
   # damage dealt removes whole units (unit cannot have less than max hp)
   # need to recalc damage as attacker may have lost units since selection phase
   let kills = calcDamage(armies[attack.attackerId],
-    armies[attack.defenderId], true) div armies[attack.defenderId].hp
+    armies[attack.defenderId]) div armies[attack.defenderId].hp
   armies[attack.defenderId].units = armies[attack.defenderId].units - kills
-  var imin = if armies[attack.attackerId].faction == Immune: "imu"
-  else: "inf"
-  echo ""
-  echo attack.initiative, " ", attack.attackerId, "-", attack.defenderId, " ",
-      imin, " ", calcDamage(armies[attack.attackerId],
-    armies[attack.defenderId]), " ", kills
   result = kills > 0
 
 
@@ -190,7 +182,6 @@ proc simulateBattle(armies: var Table[int, Group]): void =
               maxInitiative = other.initiative
               targetId = id
 
-
       # if no targets then no attack
       if targetId >= 0:
         attackQ.push(Attack(attackerId: current.id, defenderId: targetId,
@@ -208,7 +199,7 @@ proc simulateBattle(armies: var Table[int, Group]): void =
         if wasDamageDealt:
           anyDamageDealt = true
 
-    # if no damage was dealt this turn then we have a stalemate
+    # if no damage was dealt this turn then we have a stalemate so end simulation
     if not anyDamageDealt:
       break
 
@@ -219,15 +210,6 @@ proc simulateBattle(armies: var Table[int, Group]): void =
         deadUnits.add(id)
     for id in deadUnits:
       armies.del(id)
-
-    # echo armies
-    # var x = stdin.readLine
-
-    # echo "NEW ROUND"
-    # for group in values(armies):
-    #   if group.faction == Immune:
-    #     echo group.units
-    # var z = stdin.readLine()
 
 
 proc isImmuneWin(armies: Table[int, Group]): bool =
@@ -242,10 +224,7 @@ proc isImmuneWin(armies: Table[int, Group]): bool =
 proc findUpperBound(filename: string): int =
   var boost = 1
   while true:
-    var boostedArmies = readInput(filename)
-    for group in mvalues(boostedArmies):
-      if group.faction == Immune:
-        group.power = group.power + boost
+    var boostedArmies = readInput(filename, boost)
     boostedArmies.simulateBattle()
 
     if isImmuneWin(boostedArmies):
@@ -258,20 +237,15 @@ proc simulateBinarySearch(filename: string, lower, upper: int): int =
     left = lower
     right = upper
 
-
   while true:
     var
-      mid = (right + left) div 2 # + 1 # important to take ceiling here
-      boostedArmies = readInput(filename)
+      mid = (right + left) div 2
+      boostedArmies = readInput(filename, mid)
 
-    for group in mvalues(boostedArmies):
-      if group.faction == Immune:
-        group.power = group.power + mid
     boostedArmies.simulateBattle()
 
     if isImmuneWin(boostedArmies):
       if right == left:
-        echo boostedArmies
         return countRemainingUnits(boostedArmies)
       else:
         right = mid
@@ -281,48 +255,11 @@ proc simulateBinarySearch(filename: string, lower, upper: int): int =
 
 
 const filename = "input.txt"
-  # var p1armies = readInput(filename)
 
-  # p1armies.simulateBattle()
+var armies = readInput(filename)
+armies.simulateBattle()
+# at end of game, print number of units in winning army
+echo "Part 1: ", countRemainingUnits(armies)
 
-  # at end of game, print number of units in winning army
-  # echo "Part 1: ", countRemainingUnits(p1armies)
-
-  # do a specific boost
-var boostedArmies = readInput(filename, 188)
-  # for group in mvalues(boostedArmies):
-  #   if group.faction == Immune:
-  #     group.power = group.power + 188
-
-boostedArmies.simulateBattle()
-echo "simmed"
-echo boostedArmies
-echo countRemainingUnits(boostedArmies)
-
-
-# # brute force
-# var immuneWin = false
-# var boost = 1
-# while not immuneWin:
-#   var boostedArmies = readInput(filename)
-
-#   for group in mvalues(boostedArmies):
-#     if group.faction == Immune:
-#       group.power = group.power + boost
-#   boostedArmies.simulateBattle()
-
-#   immuneWin = isImmuneWin(boostedArmies)
-
-#   if immuneWin:
-#     echo "immune win ", boost
-#     echo "count", countRemainingUnits(boostedArmies)
-#   else:
-#     echo "illnesswin ", boost
-#     boost.inc()
-
-
-# let upperBound = findUpperBound(filename)
-# #echo upperBound
-# echo "Part 2: ", simulateBinarySearch(filename, upperBound div 2, upperBound)
-#979 too high
-#965 too high
+let upperBound = findUpperBound(filename)
+echo "Part 2: ", simulateBinarySearch(filename, upperBound div 2, upperBound)
