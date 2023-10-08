@@ -1,3 +1,7 @@
+# computes values using FNV-1a hash, then hashes result to get next hash
+# https://en.wikipedia.org/wiki/Fowler-Noll-Vo_hash_function#FNV-1a_hash
+
+
 #VARIABLES
 R0 = input, R1 = SOME VALUE WE ARE BUILDING?, R2= INNERTEMP, R3=OUTERTEMP, R4 = INSTRUCTION POINTER, R5 =TEMP
 
