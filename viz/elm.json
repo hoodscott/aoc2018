@@ -14,9 +14,12 @@
             "ianmackenzie/elm-3d-camera": "3.1.0",
             "ianmackenzie/elm-3d-scene": "1.0.1",
             "ianmackenzie/elm-geometry": "3.11.0",
-            "ianmackenzie/elm-units": "2.10.0"
+            "ianmackenzie/elm-units": "2.10.0",
+            "mpizenberg/elm-pointer-events": "5.0.0"
         },
         "indirect": {
+            "elm/bytes": "1.0.8",
+            "elm/file": "1.0.5",
             "elm/random": "1.0.0",
             "elm/time": "1.0.0",
             "elm/url": "1.0.0",

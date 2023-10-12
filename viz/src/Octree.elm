@@ -1,6 +1,6 @@
 module Octree exposing (main)
 
-import Angle exposing (Angle)
+import Angle
 import Axis3d
 import Block3d
 import Browser
@@ -12,6 +12,7 @@ import Duration exposing (Duration)
 import Html exposing (..)
 import Html.Attributes exposing (style)
 import Html.Events exposing (onClick)
+import Html.Events.Extra.Wheel
 import Json.Decode as Decode exposing (Decoder)
 import Length
 import LineSegment3d
@@ -60,8 +61,9 @@ type alias AnimatedPoint =
 
 type alias Model =
     { -- camera
-      azimuth : Angle -- orbit angle of the camera around the focal point
-    , elevation : Angle -- angle of the camera up from the XY plane
+      azimuth : Angle.Angle -- orbit angle of the camera around the focal point
+    , elevation : Angle.Angle -- angle of the camera up from the XY plane
+    , distance : Length.Length
     , orbiting : Bool -- are we moving the camera
 
     -- problem simulation
@@ -89,6 +91,7 @@ initialModel =
     in
     { azimuth = Angle.degrees 225
     , elevation = Angle.degrees 30
+    , distance = Length.meters 200
     , orbiting = False
     , dimension = Dim3D
     , range = 0
@@ -185,6 +188,7 @@ type Msg
       -- camera control
     | ToTopDownCamera
     | ToInitialCamera
+    | ZoomChange Float
       -- simulation stuff
     | NextD
     | HighlightPointsPos
@@ -337,7 +341,7 @@ update msg model =
             ( { model
                 | box =
                     Just <|
-                        createBoundingBox ( 0, -32, -32 ) 64
+                        createBoundingBox ( 16, -32, -32 ) 16
               }
             , Cmd.none
             )
@@ -359,6 +363,15 @@ update msg model =
 
         DrawRhombucD b ->
             ( { model | showRhombic = b }, Cmd.none )
+
+        ZoomChange delta ->
+            ( { model
+                | distance =
+                    Quantity.plus model.distance (Length.meters <| delta / 10)
+                        |> Quantity.clamp (Length.meters 50) (Length.meters 250)
+              }
+            , Cmd.none
+            )
 
 
 createBoundingBox :
@@ -490,7 +503,7 @@ view model =
                 { focalPoint = Point3d.meters 0.5 0.5 0
                 , azimuth = model.azimuth
                 , elevation = model.elevation
-                , distance = Length.meters 200
+                , distance = model.distance
                 }
 
         axes =
@@ -545,7 +558,7 @@ view model =
                     if model.showRhombic then
                         Block3d.vertices box
                             |> List.map
-                                (drawRombicCorners (Block3d.centerPoint box))
+                                (drawRhombicEdges (Block3d.centerPoint box))
                             |> List.concat
 
                     else
@@ -553,6 +566,10 @@ view model =
 
                 Nothing ->
                     []
+
+        zoomMsg : Html.Events.Extra.Wheel.Event -> Msg
+        zoomMsg event =
+            ZoomChange event.deltaY
     in
     main_
         [ style "box-sizing" "border-box"
@@ -567,6 +584,7 @@ view model =
         ]
         [ section
             [ Html.Events.onMouseDown MouseDown
+            , Html.Events.Extra.Wheel.onWheel zoomMsg
             , style "border" "2px solid black"
             , style "background" "slategrey"
             , style "cursor" "move"
@@ -587,10 +605,7 @@ view model =
                         ++ showRhombic
                 }
             ]
-        , section
-            [ style "flex" "1"
-            ]
-          <|
+        , section [ style "flex" "1" ] <|
             [ p [] [ text "dimension" ]
             , button [ onClick NextD ] [ text "next dim" ]
             , p [] [ text "camera" ]
@@ -607,9 +622,9 @@ view model =
                 [ onClick HighlightPointsInBoxRange ]
                 [ text "make points in range yellow" ]
             , p [] [ text "bounding box" ]
-            , button [ onClick AddLeftBox ] [ text "add left box" ]
-            , button [ onClick AddRightBox ] [ text "add right box" ]
-            , button [ onClick AddCentreBox ] [ text "add centre box" ]
+            , button [ onClick AddLeftBox ] [ text "add big example box" ]
+            , button [ onClick AddRightBox ] [ text "add example box" ]
+            , button [ onClick AddCentreBox ] [ text "add wee example box" ]
             ]
                 ++ (if model.box /= Nothing then
                         [ button
@@ -627,23 +642,17 @@ view model =
         ]
 
 
-drawRombicCorners :
+drawRhombicEdges :
     Point3d.Point3d Length.Meters Coords
     -> Point3d.Point3d Length.Meters Coords
     -> List (Scene3d.Entity Coords)
-drawRombicCorners centrePoint vertex =
+drawRhombicEdges centrePoint cubeVertex =
     let
-        angleFromCentre =
-            -- LineSegment3d.from centrePoint vertex
-            --     |> LineSegment3d.direction
-            --     |> Direction3d.angleFrom Direction3d.x
-            Just Angle.degrees
-
         axisThroughCentre =
-            Axis3d.throughPoints vertex centrePoint
+            Axis3d.throughPoints cubeVertex centrePoint
 
         verticalAxis =
-            Axis3d.through vertex Direction3d.x
+            Axis3d.through cubeVertex Direction3d.x
 
         createEdge axis from to rotate =
             LineSegment3d.from from to
@@ -651,11 +660,11 @@ drawRombicCorners centrePoint vertex =
                 |> LineSegment3d.rotateAround axis (Angle.degrees rotate)
                 |> Scene3d.lineSegment (Scene3d.Material.color Color.yellow)
     in
-    case ( angleFromCentre, axisThroughCentre ) of
-        ( Just angle, Just axis ) ->
-            List.map (createEdge axis vertex centrePoint) [ 0, 120, 240 ]
+    case axisThroughCentre of
+        Just axis ->
+            List.map (createEdge axis cubeVertex centrePoint) [ 0, 120, 240 ]
 
-        _ ->
+        Nothing ->
             []
 
 
