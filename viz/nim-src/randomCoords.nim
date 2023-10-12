@@ -1,4 +1,4 @@
-import std/random #, std/strutils
+import std/random
 
 randomize()
 
@@ -9,7 +9,7 @@ const
   count = 100
 
 var str = "["
-for i in 0..count:
+for i in 0..<count:
   var strInner = ""
   for d in 0..<dim:
     strInner.add($rand(min..max) & ", ")

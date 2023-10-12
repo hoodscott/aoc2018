@@ -1,6 +1,8 @@
 module Octree exposing (main)
 
 import Angle exposing (Angle)
+import Axis3d
+import Block3d
 import Browser
 import Browser.Events
 import Camera3d
@@ -49,7 +51,7 @@ type alias Target =
     }
 
 
-type alias AnimatedEntity =
+type alias AnimatedPoint =
     { position : Point3d.Point3d Length.Meters Coords
     , futurePositions : List Target
     , colour : Color.Color
@@ -67,7 +69,10 @@ type alias Model =
     , range : Int --
 
     -- scene3d entities
-    , entities : List AnimatedEntity --  list of points as entities
+    , points : List AnimatedPoint -- list of points
+    , box : Maybe (Block3d.Block3d Length.Meters Coords)
+    , colourEdges : Bool
+    , showRhombic : Bool
     , axes :
         { x : Scene3d.Entity Coords
         , y : Scene3d.Entity Coords
@@ -87,7 +92,10 @@ initialModel =
     , orbiting = False
     , dimension = Dim3D
     , range = 0
-    , entities = List.map createAnimatedEntity points3D
+    , points = List.map createAnimatedEntity points3D
+    , box = Nothing
+    , colourEdges = False
+    , showRhombic = False
     , axes =
         { x =
             Scene3d.lineSegment (Scene3d.Material.color Color.red) <|
@@ -108,22 +116,39 @@ initialModel =
     }
 
 
-createAnimatedEntity : Point3d.Point3d Length.Meters Coords -> AnimatedEntity
+createAnimatedEntity : Point3d.Point3d Length.Meters Coords -> AnimatedPoint
 createAnimatedEntity point =
     { position = point, futurePositions = [], colour = Color.white }
 
 
-ifPositive : AnimatedEntity -> Bool
+ifPositive : AnimatedPoint -> Bool
 ifPositive entity =
     Length.inMeters (Point3d.xCoordinate entity.position) >= 0
 
 
-ifNegative : AnimatedEntity -> Bool
+ifNegative : AnimatedPoint -> Bool
 ifNegative entity =
     Length.inMeters (Point3d.xCoordinate entity.position) < 0
 
 
-highlight : (AnimatedEntity -> Bool) -> AnimatedEntity -> AnimatedEntity
+ifInRangeofBox :
+    Maybe (Block3d.Block3d Length.Meters Coords)
+    -> AnimatedPoint
+    -> Bool
+ifInRangeofBox maybeBox entity =
+    case maybeBox of
+        Just box ->
+            if Block3d.contains entity.position box then
+                True
+
+            else
+                False
+
+        Nothing ->
+            False
+
+
+highlight : (AnimatedPoint -> Bool) -> AnimatedPoint -> AnimatedPoint
 highlight condition entity =
     let
         newColour =
@@ -140,7 +165,7 @@ highlight condition entity =
         { entity | colour = newColour }
 
 
-createSceneEntity : AnimatedEntity -> Scene3d.Entity Coords
+createSceneEntity : AnimatedPoint -> Scene3d.Entity Coords
 createSceneEntity entity =
     Scene3d.point { radius = Pixels.float 2.5 }
         (Scene3d.Material.color entity.colour)
@@ -164,6 +189,13 @@ type Msg
     | NextD
     | HighlightPointsPos
     | HighlightPointsNeg
+    | HighlightPointsInBoxRange
+    | AddLeftBox
+    | AddRightBox
+    | AddCentreBox
+    | ClearBox
+    | DrawRhombucD Bool
+    | ToggleEdges Bool
       -- animation stuff
     | Tick Duration
 
@@ -214,7 +246,7 @@ update msg model =
                 Dim1D ->
                     ( { model
                         | dimension = Dim2D
-                        , entities = newCoords model.entities points2D
+                        , points = newCoords model.points points2D
                       }
                     , Cmd.none
                     )
@@ -222,7 +254,7 @@ update msg model =
                 Dim2D ->
                     ( { model
                         | dimension = Dim3D
-                        , entities = newCoords model.entities points3D
+                        , points = newCoords model.points points3D
                       }
                     , Cmd.none
                     )
@@ -230,7 +262,7 @@ update msg model =
                 Dim3D ->
                     ( { model
                         | dimension = Dim1D
-                        , entities = newCoords model.entities points1D
+                        , points = newCoords model.points points1D
                       }
                     , Cmd.none
                     )
@@ -238,10 +270,10 @@ update msg model =
         Tick duration ->
             let
                 _ =
-                    Debug.log "tick" (Duration.inMilliseconds duration)
+                    Debug.log "frametime (ms)" (Duration.inMilliseconds duration)
             in
             ( { model
-                | entities = List.map (animateEntity duration) model.entities
+                | points = List.map (animateEntity duration) model.points
               }
             , Cmd.none
             )
@@ -264,26 +296,85 @@ update msg model =
 
         HighlightPointsPos ->
             ( { model
-                | entities =
+                | points =
                     List.map
-                        (\e -> highlight ifPositive e)
-                        model.entities
+                        (highlight ifPositive)
+                        model.points
               }
             , Cmd.none
             )
 
         HighlightPointsNeg ->
             ( { model
-                | entities =
+                | points =
                     List.map
-                        (\e -> highlight ifNegative e)
-                        model.entities
+                        (highlight ifNegative)
+                        model.points
               }
             , Cmd.none
             )
 
+        HighlightPointsInBoxRange ->
+            ( { model
+                | points =
+                    List.map
+                        (highlight (ifInRangeofBox model.box))
+                        model.points
+              }
+            , Cmd.none
+            )
 
-animateEntity : Duration -> AnimatedEntity -> AnimatedEntity
+        AddLeftBox ->
+            ( { model
+                | box =
+                    Just <|
+                        createBoundingBox ( -64, -32, -32 ) 64
+              }
+            , Cmd.none
+            )
+
+        AddRightBox ->
+            ( { model
+                | box =
+                    Just <|
+                        createBoundingBox ( 0, -32, -32 ) 64
+              }
+            , Cmd.none
+            )
+
+        AddCentreBox ->
+            ( { model
+                | box =
+                    Just <|
+                        createBoundingBox ( -8, -8, -8 ) 16
+              }
+            , Cmd.none
+            )
+
+        ClearBox ->
+            ( { model | box = Nothing }, Cmd.none )
+
+        ToggleEdges b ->
+            ( { model | colourEdges = b }, Cmd.none )
+
+        DrawRhombucD b ->
+            ( { model | showRhombic = b }, Cmd.none )
+
+
+createBoundingBox :
+    ( Float, Float, Float )
+    -> Float
+    -> Block3d.Block3d Length.Meters Coords
+createBoundingBox topLeftPos width =
+    let
+        block ( fromx, fromy, fromz ) w =
+            Block3d.from (Point3d.meters fromx fromy fromz)
+                (Point3d.meters (fromx + w) (fromy + w) (fromz + w))
+    in
+    block topLeftPos width
+
+
+animateEntity : Duration -> AnimatedPoint -> AnimatedPoint
 animateEntity duration entity =
     case entity.futurePositions of
         currentTarget :: futurePositions ->
@@ -334,15 +425,15 @@ animateEntity duration entity =
 
 
 newCoords :
-    List AnimatedEntity
+    List AnimatedPoint
     -> List (Point3d.Point3d Length.Meters Coords)
-    -> List AnimatedEntity
+    -> List AnimatedPoint
 newCoords entities newPoints =
     let
         setNewCoords :
-            AnimatedEntity
+            AnimatedPoint
             -> Point3d.Point3d Length.Meters Coords
-            -> AnimatedEntity
+            -> AnimatedPoint
         setNewCoords entity newPoint =
             let
                 interpolated =
@@ -376,7 +467,7 @@ subscriptions model =
          else
             []
         )
-            ++ (if List.any needsAnimated model.entities then
+            ++ (if List.any needsAnimated model.points then
                     [ Browser.Events.onAnimationFrameDelta
                         (Duration.milliseconds >> Tick)
                     ]
@@ -386,7 +477,7 @@ subscriptions model =
                )
 
 
-needsAnimated : AnimatedEntity -> Bool
+needsAnimated : AnimatedPoint -> Bool
 needsAnimated entity =
     List.length entity.futurePositions > 0
 
@@ -412,6 +503,56 @@ view model =
 
                 Dim3D ->
                     [ model.axes.x, model.axes.y, model.axes.z ]
+
+        boundingBox =
+            case model.box of
+                Just box ->
+                    let
+                        createEdge lineEdge =
+                            let
+                                edgeColour =
+                                    if model.colourEdges then
+                                        case LineSegment3d.direction lineEdge of
+                                            Just dir ->
+                                                if Direction3d.xComponent dir /= 0 then
+                                                    Color.red
+
+                                                else if Direction3d.yComponent dir /= 0 then
+                                                    Color.green
+
+                                                else
+                                                    Color.blue
+
+                                            Nothing ->
+                                                Color.white
+
+                                    else
+                                        Color.white
+                            in
+                            Scene3d.lineSegment
+                                (Scene3d.Material.color edgeColour)
+                                lineEdge
+                    in
+                    Block3d.edges box
+                        |> List.map createEdge
+
+                Nothing ->
+                    []
+
+        showRhombic =
+            case model.box of
+                Just box ->
+                    if model.showRhombic then
+                        Block3d.vertices box
+                            |> List.map
+                                (drawRombicCorners (Block3d.centerPoint box))
+                            |> List.concat
+
+                    else
+                        []
+
+                Nothing ->
+                    []
     in
     main_
         [ style "box-sizing" "border-box"
@@ -439,25 +580,83 @@ view model =
                 , clipDepth = Length.meters 0.1
                 , dimensions = ( Pixels.int 800, Pixels.int 600 )
                 , background = Scene3d.transparentBackground
-                , entities = axes ++ List.map createSceneEntity model.entities
+                , entities =
+                    axes
+                        ++ boundingBox
+                        ++ List.map createSceneEntity model.points
+                        ++ showRhombic
                 }
             ]
         , section
             [ style "flex" "1"
-            , style "display" "flex"
-            , style "flex-wrap" "wrap"
             ]
-            [ button [ onClick NextD ] [ text "next dim" ]
+          <|
+            [ p [] [ text "dimension" ]
+            , button [ onClick NextD ] [ text "next dim" ]
+            , p [] [ text "camera" ]
             , button [ onClick ToTopDownCamera ] [ text "top down" ]
             , button [ onClick ToInitialCamera ] [ text "fourtyfive" ]
+            , p [] [ text "highlight" ]
             , button
                 [ onClick HighlightPointsPos ]
                 [ text "make positive x yellow" ]
             , button
                 [ onClick HighlightPointsNeg ]
                 [ text "make negative x yellow" ]
+            , button
+                [ onClick HighlightPointsInBoxRange ]
+                [ text "make points in range yellow" ]
+            , p [] [ text "bounding box" ]
+            , button [ onClick AddLeftBox ] [ text "add left box" ]
+            , button [ onClick AddRightBox ] [ text "add right box" ]
+            , button [ onClick AddCentreBox ] [ text "add centre box" ]
             ]
+                ++ (if model.box /= Nothing then
+                        [ button
+                            [ onClick <| ToggleEdges (not model.colourEdges) ]
+                            [ text "colour box edges" ]
+                        , button [ onClick ClearBox ] [ text "clear box" ]
+                        , button
+                            [ onClick <| DrawRhombucD (not model.showRhombic) ]
+                            [ text "draw rhombic dodecahedron" ]
+                        ]
+
+                    else
+                        []
+                   )
         ]
+
+
+drawRombicCorners :
+    Point3d.Point3d Length.Meters Coords
+    -> Point3d.Point3d Length.Meters Coords
+    -> List (Scene3d.Entity Coords)
+drawRombicCorners centrePoint vertex =
+    let
+        angleFromCentre =
+            -- LineSegment3d.from centrePoint vertex
+            --     |> LineSegment3d.direction
+            --     |> Direction3d.angleFrom Direction3d.x
+            Just Angle.degrees
+
+        axisThroughCentre =
+            Axis3d.throughPoints vertex centrePoint
+
+        verticalAxis =
+            Axis3d.through vertex Direction3d.x
+
+        createEdge axis from to rotate =
+            LineSegment3d.from from to
+                |> LineSegment3d.rotateAround verticalAxis (Angle.degrees 90)
+                |> LineSegment3d.rotateAround axis (Angle.degrees rotate)
+                |> Scene3d.lineSegment (Scene3d.Material.color Color.yellow)
+    in
+    case ( angleFromCentre, axisThroughCentre ) of
+        ( Just angle, Just axis ) ->
+            List.map (createEdge axis vertex centrePoint) [ 0, 120, 240 ]
+
+        _ ->
+            []
 
 
 randomPoints : List ( Float, Float, Float )
