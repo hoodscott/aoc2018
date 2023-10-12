@@ -68,7 +68,11 @@ type alias Model =
 
     -- scene3d entities
     , entities : List AnimatedEntity --  list of points as entities
-    , axes : { x : Scene3d.Entity Coords, y : Scene3d.Entity Coords, z : Scene3d.Entity Coords }
+    , axes :
+        { x : Scene3d.Entity Coords
+        , y : Scene3d.Entity Coords
+        , z : Scene3d.Entity Coords
+        }
     }
 
 
@@ -86,14 +90,20 @@ initialModel =
     , entities = List.map createAnimatedEntity points3D
     , axes =
         { x =
-            Scene3d.lineSegment (Scene3d.Material.color Color.red)
-                (LineSegment3d.from (Point3d.meters -axisSize 0 0) (Point3d.meters axisSize 0 0))
+            Scene3d.lineSegment (Scene3d.Material.color Color.red) <|
+                LineSegment3d.from
+                    (Point3d.meters -axisSize 0 0)
+                    (Point3d.meters axisSize 0 0)
         , y =
-            Scene3d.lineSegment (Scene3d.Material.color Color.green)
-                (LineSegment3d.from (Point3d.meters 0 -axisSize 0) (Point3d.meters 0 axisSize 0))
+            Scene3d.lineSegment (Scene3d.Material.color Color.green) <|
+                LineSegment3d.from
+                    (Point3d.meters 0 -axisSize 0)
+                    (Point3d.meters 0 axisSize 0)
         , z =
-            Scene3d.lineSegment (Scene3d.Material.color Color.blue)
-                (LineSegment3d.from (Point3d.meters 0 0 -axisSize) (Point3d.meters 0 0 axisSize))
+            Scene3d.lineSegment (Scene3d.Material.color Color.blue) <|
+                LineSegment3d.from
+                    (Point3d.meters 0 0 -axisSize)
+                    (Point3d.meters 0 0 axisSize)
         }
     }
 
@@ -185,9 +195,16 @@ update msg model =
                             |> Quantity.plus (dy |> Quantity.at rotationRate)
                             -- clamp to make sure camera cannot go past vertical
                             -- in either direction
-                            |> Quantity.clamp (Angle.degrees -90) (Angle.degrees 90)
+                            |> Quantity.clamp
+                                (Angle.degrees -90)
+                                (Angle.degrees 90)
                 in
-                ( { model | azimuth = newAzimuth, elevation = newElevation }, Cmd.none )
+                ( { model
+                    | azimuth = newAzimuth
+                    , elevation = newElevation
+                  }
+                , Cmd.none
+                )
 
             else
                 ( model, Cmd.none )
@@ -195,32 +212,75 @@ update msg model =
         NextD ->
             case model.dimension of
                 Dim1D ->
-                    ( { model | dimension = Dim2D, entities = newCoords model.entities points2D }, Cmd.none )
+                    ( { model
+                        | dimension = Dim2D
+                        , entities = newCoords model.entities points2D
+                      }
+                    , Cmd.none
+                    )
 
                 Dim2D ->
-                    ( { model | dimension = Dim3D, entities = newCoords model.entities points3D }, Cmd.none )
+                    ( { model
+                        | dimension = Dim3D
+                        , entities = newCoords model.entities points3D
+                      }
+                    , Cmd.none
+                    )
 
                 Dim3D ->
-                    ( { model | dimension = Dim1D, entities = newCoords model.entities points1D }, Cmd.none )
+                    ( { model
+                        | dimension = Dim1D
+                        , entities = newCoords model.entities points1D
+                      }
+                    , Cmd.none
+                    )
 
         Tick duration ->
             let
                 _ =
                     Debug.log "tick" (Duration.inMilliseconds duration)
             in
-            ( { model | entities = List.map (animateEntity duration) model.entities }, Cmd.none )
+            ( { model
+                | entities = List.map (animateEntity duration) model.entities
+              }
+            , Cmd.none
+            )
 
         ToTopDownCamera ->
-            ( { model | azimuth = Angle.degrees 270, elevation = Angle.degrees 90 }, Cmd.none )
+            ( { model
+                | azimuth = Angle.degrees 270
+                , elevation = Angle.degrees 90
+              }
+            , Cmd.none
+            )
 
         ToInitialCamera ->
-            ( { model | azimuth = Angle.degrees 225, elevation = Angle.degrees 30 }, Cmd.none )
+            ( { model
+                | azimuth = Angle.degrees 225
+                , elevation = Angle.degrees 30
+              }
+            , Cmd.none
+            )
 
         HighlightPointsPos ->
-            ( { model | entities = List.map (\e -> highlight ifPositive e) model.entities }, Cmd.none )
+            ( { model
+                | entities =
+                    List.map
+                        (\e -> highlight ifPositive e)
+                        model.entities
+              }
+            , Cmd.none
+            )
 
         HighlightPointsNeg ->
-            ( { model | entities = List.map (\e -> highlight ifNegative e) model.entities }, Cmd.none )
+            ( { model
+                | entities =
+                    List.map
+                        (\e -> highlight ifNegative e)
+                        model.entities
+              }
+            , Cmd.none
+            )
 
 
 animateEntity : Duration -> AnimatedEntity -> AnimatedEntity
@@ -248,16 +308,23 @@ animateEntity duration entity =
                             speed =
                                 (10 * currentTarget.speedMult)
                                     |> Speed.metersPerSecond
-                                    |> Quantity.clamp (Speed.metersPerSecond 0) (Speed.metersPerSecond 100)
+                                    |> Quantity.clamp
+                                        (Speed.metersPerSecond 0)
+                                        (Speed.metersPerSecond 100)
 
                             length : Length.Length
                             length =
                                 Quantity.at speed duration
 
                             newFrom =
-                                Point3d.translateBy (Vector3d.withLength length dir) entity.position
+                                Point3d.translateBy
+                                    (Vector3d.withLength length dir)
+                                    entity.position
                         in
-                        { entity | position = newFrom, futurePositions = entity.futurePositions }
+                        { entity
+                            | position = newFrom
+                            , futurePositions = entity.futurePositions
+                        }
 
                     Nothing ->
                         entity
@@ -266,10 +333,16 @@ animateEntity duration entity =
             entity
 
 
-newCoords : List AnimatedEntity -> List (Point3d.Point3d Length.Meters Coords) -> List AnimatedEntity
+newCoords :
+    List AnimatedEntity
+    -> List (Point3d.Point3d Length.Meters Coords)
+    -> List AnimatedEntity
 newCoords entities newPoints =
     let
-        setNewCoords : AnimatedEntity -> Point3d.Point3d Length.Meters Coords -> AnimatedEntity
+        setNewCoords :
+            AnimatedEntity
+            -> Point3d.Point3d Length.Meters Coords
+            -> AnimatedEntity
         setNewCoords entity newPoint =
             let
                 interpolated =
@@ -377,8 +450,12 @@ view model =
             [ button [ onClick NextD ] [ text "next dim" ]
             , button [ onClick ToTopDownCamera ] [ text "top down" ]
             , button [ onClick ToInitialCamera ] [ text "fourtyfive" ]
-            , button [ onClick HighlightPointsPos ] [ text "make positive x yellow" ]
-            , button [ onClick HighlightPointsNeg ] [ text "make negative x yellow" ]
+            , button
+                [ onClick HighlightPointsPos ]
+                [ text "make positive x yellow" ]
+            , button
+                [ onClick HighlightPointsNeg ]
+                [ text "make negative x yellow" ]
             ]
         ]
 
