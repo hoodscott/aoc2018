@@ -1,4 +1,6 @@
-# Advent of Code 2018
+# 2018 - Nim
+
+[Advent of Code 2018](https://adventofcode.com/2018) - Written in [Nim](https://nim-lang.org/)
 
 ## To Compile
 ```
