@@ -44,10 +44,8 @@ type Dimension
 
 
 type alias AnimatedEntity =
-    { entity : Scene3d.Entity Coords
-    , from : Point3d.Point3d Length.Meters Coords
-    , to : Point3d.Point3d Length.Meters Coords
-    , isMoving : Bool
+    { position : Point3d.Point3d Length.Meters Coords
+    , futurePositions : List (Point3d.Point3d Length.Meters Coords)
     , colour : Color.Color
     }
 
@@ -96,17 +94,17 @@ initialModel =
 
 createAnimatedEntity : Point3d.Point3d Length.Meters Coords -> AnimatedEntity
 createAnimatedEntity point =
-    { entity = createPoint Color.white point, from = point, to = point, isMoving = False, colour = Color.white }
+    { position = point, futurePositions = [], colour = Color.white }
 
 
 ifPositive : AnimatedEntity -> Bool
 ifPositive entity =
-    Length.inMeters (Point3d.xCoordinate entity.to) >= 0
+    Length.inMeters (Point3d.xCoordinate entity.position) >= 0
 
 
 ifNegative : AnimatedEntity -> Bool
 ifNegative entity =
-    Length.inMeters (Point3d.xCoordinate entity.to) < 0
+    Length.inMeters (Point3d.xCoordinate entity.position) < 0
 
 
 highlight : (AnimatedEntity -> Bool) -> AnimatedEntity -> AnimatedEntity
@@ -123,14 +121,14 @@ highlight condition entity =
         entity
 
     else
-        { entity | entity = createPoint newColour entity.from, colour = newColour }
+        { entity | colour = newColour }
 
 
-createPoint : Color.Color -> Point3d.Point3d Length.Meters c -> Scene3d.Entity c
-createPoint colour point =
+createSceneEntity : AnimatedEntity -> Scene3d.Entity Coords
+createSceneEntity entity =
     Scene3d.point { radius = Pixels.float 2.5 }
-        (Scene3d.Material.color colour)
-        point
+        (Scene3d.Material.color entity.colour)
+        entity.position
 
 
 init : () -> ( Model, Cmd msg )
@@ -179,10 +177,9 @@ update msg model =
                     newElevation =
                         model.elevation
                             |> Quantity.plus (dy |> Quantity.at rotationRate)
-
-                    -- clamp to make sure camera cannot go past vertical
-                    -- in either direction
-                    -- |> Quantity.clamp (Angle.degrees -90) (Angle.degrees 90)
+                            -- clamp to make sure camera cannot go past vertical
+                            -- in either direction
+                            |> Quantity.clamp (Angle.degrees -90) (Angle.degrees 90)
                 in
                 ( { model | azimuth = newAzimuth, elevation = newElevation }, Cmd.none )
 
@@ -201,6 +198,10 @@ update msg model =
                     ( { model | dimension = Dim1D, entities = newCoords model.entities points1D }, Cmd.none )
 
         Tick duration ->
+            let
+                _ =
+                    Debug.log "tick" (Duration.inMilliseconds duration)
+            in
             ( { model | entities = List.map (animateEntity duration) model.entities }, Cmd.none )
 
         ToTopDownCamera ->
@@ -218,59 +219,61 @@ update msg model =
 
 animateEntity : Duration -> AnimatedEntity -> AnimatedEntity
 animateEntity duration entity =
-    let
-        difference =
-            LineSegment3d.from entity.from entity.to
+    case entity.futurePositions of
+        currentTarget :: futurePositions ->
+            let
+                difference =
+                    LineSegment3d.from entity.position currentTarget
 
-        direction : Maybe (Direction3d.Direction3d Coords)
-        direction =
-            LineSegment3d.direction difference
-    in
-    if not entity.isMoving then
-        entity
+                direction : Maybe (Direction3d.Direction3d Coords)
+                direction =
+                    LineSegment3d.direction difference
+            in
+            if Length.inMeters (LineSegment3d.length difference) < 0.25 then
+                { entity
+                    | position = currentTarget
+                    , futurePositions = futurePositions
+                }
 
-    else if Length.inMeters (LineSegment3d.length difference) < 0.25 then
-        { entity | entity = createPoint entity.colour entity.to, from = entity.to, isMoving = False }
+            else
+                case direction of
+                    Just dir ->
+                        let
+                            length : Length.Length
+                            length =
+                                Quantity.at
+                                    (Speed.metersPerSecond
+                                        (if Length.inMeters (LineSegment3d.length difference) > 15 then
+                                            100
 
-    else
-        case direction of
-            Just dir ->
-                let
-                    length : Length.Length
-                    length =
-                        Quantity.at
-                            (Speed.metersPerSecond
-                                (if Length.inMeters (LineSegment3d.length difference) > 15 then
-                                    100
+                                         else if Length.inMeters (LineSegment3d.length difference) > 5 then
+                                            50
 
-                                 else if Length.inMeters (LineSegment3d.length difference) > 5 then
-                                    50
+                                         else
+                                            25
+                                        )
+                                    )
+                                    duration
 
-                                 else
-                                    25
-                                )
-                            )
-                            duration
+                            newFrom =
+                                Point3d.translateBy (Vector3d.withLength length dir) entity.position
+                        in
+                        { entity | position = newFrom, futurePositions = entity.futurePositions }
 
-                    newFrom =
-                        Point3d.translateBy (Vector3d.withLength length dir) entity.from
+                    Nothing ->
+                        entity
 
-                    newEntity =
-                        Scene3d.translateBy (Vector3d.withLength length dir) entity.entity
-                in
-                { entity | entity = newEntity, from = newFrom }
-
-            Nothing ->
-                entity
+        _ ->
+            entity
 
 
 newCoords : List AnimatedEntity -> List (Point3d.Point3d Length.Meters Coords) -> List AnimatedEntity
 newCoords oldCoords newPoints =
     let
-        something entity newPoint =
-            { entity | to = newPoint, isMoving = True }
+        setNewCoords entity newPoint =
+            { entity | futurePositions = [ newPoint ] }
     in
-    List.map2 something oldCoords newPoints
+    List.map2 setNewCoords oldCoords newPoints
 
 
 decodeMouseMove : Decoder Msg
@@ -303,7 +306,7 @@ subscriptions model =
 
 needsAnimated : AnimatedEntity -> Bool
 needsAnimated entity =
-    entity.isMoving
+    List.length entity.futurePositions > 0
 
 
 view : Model -> Html Msg
@@ -341,7 +344,7 @@ view model =
         ]
         [ section
             [ Html.Events.onMouseDown MouseDown
-            , style "border" "1px solid black"
+            , style "border" "2px solid black"
             , style "background" "slategrey"
             , style "cursor" "move"
             ]
@@ -354,7 +357,7 @@ view model =
                 , clipDepth = Length.meters 0.1
                 , dimensions = ( Pixels.int 800, Pixels.int 600 )
                 , background = Scene3d.transparentBackground
-                , entities = axes ++ List.map .entity model.entities
+                , entities = axes ++ List.map createSceneEntity model.entities
                 }
             ]
         , section
