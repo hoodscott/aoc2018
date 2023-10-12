@@ -43,9 +43,15 @@ type Dimension
     | Dim3D
 
 
+type alias Target =
+    { position : Point3d.Point3d Length.Meters Coords
+    , speedMult : Float
+    }
+
+
 type alias AnimatedEntity =
     { position : Point3d.Point3d Length.Meters Coords
-    , futurePositions : List (Point3d.Point3d Length.Meters Coords)
+    , futurePositions : List Target
     , colour : Color.Color
     }
 
@@ -223,15 +229,15 @@ animateEntity duration entity =
         currentTarget :: futurePositions ->
             let
                 difference =
-                    LineSegment3d.from entity.position currentTarget
+                    LineSegment3d.from entity.position currentTarget.position
 
                 direction : Maybe (Direction3d.Direction3d Coords)
                 direction =
                     LineSegment3d.direction difference
             in
-            if Length.inMeters (LineSegment3d.length difference) < 0.25 then
+            if Length.inMeters (LineSegment3d.length difference) < 0.5 then
                 { entity
-                    | position = currentTarget
+                    | position = currentTarget.position
                     , futurePositions = futurePositions
                 }
 
@@ -239,21 +245,14 @@ animateEntity duration entity =
                 case direction of
                     Just dir ->
                         let
+                            speed =
+                                (10 * currentTarget.speedMult)
+                                    |> Speed.metersPerSecond
+                                    |> Quantity.clamp (Speed.metersPerSecond 0) (Speed.metersPerSecond 100)
+
                             length : Length.Length
                             length =
-                                Quantity.at
-                                    (Speed.metersPerSecond
-                                        (if Length.inMeters (LineSegment3d.length difference) > 15 then
-                                            100
-
-                                         else if Length.inMeters (LineSegment3d.length difference) > 5 then
-                                            50
-
-                                         else
-                                            25
-                                        )
-                                    )
-                                    duration
+                                Quantity.at speed duration
 
                             newFrom =
                                 Point3d.translateBy (Vector3d.withLength length dir) entity.position
@@ -268,12 +267,22 @@ animateEntity duration entity =
 
 
 newCoords : List AnimatedEntity -> List (Point3d.Point3d Length.Meters Coords) -> List AnimatedEntity
-newCoords oldCoords newPoints =
+newCoords entities newPoints =
     let
+        setNewCoords : AnimatedEntity -> Point3d.Point3d Length.Meters Coords -> AnimatedEntity
         setNewCoords entity newPoint =
-            { entity | futurePositions = [ newPoint ] }
+            let
+                interpolated =
+                    Point3d.interpolateFrom entity.position newPoint
+            in
+            { entity
+                | futurePositions =
+                    List.map2 Target
+                        (List.map interpolated [ 0.6, 0.9, 0.95, 1 ])
+                        [ 4, 2, 1.5, 1 ]
+            }
     in
-    List.map2 setNewCoords oldCoords newPoints
+    List.map2 setNewCoords entities newPoints
 
 
 decodeMouseMove : Decoder Msg
