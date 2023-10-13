@@ -3,7 +3,7 @@ module Octree exposing (main)
 import Angle
 import Axis3d
 import Block3d
-import BoundingBox3d exposing (BoundingBox3d)
+import BoundingBox3d
 import Browser
 import Browser.Events
 import Camera3d
@@ -11,7 +11,7 @@ import Color
 import Direction3d
 import Duration exposing (Duration)
 import Html exposing (..)
-import Html.Attributes exposing (style)
+import Html.Attributes exposing (checked, style, type_)
 import Html.Events exposing (onClick)
 import Html.Events.Extra.Wheel
 import Json.Decode as Decode exposing (Decoder)
@@ -66,10 +66,13 @@ type alias Model =
     , elevation : Angle.Angle -- angle of the camera up from the XY plane
     , distance : Length.Length
     , orbiting : Bool -- are we moving the camera
+    , orthographic : Bool
 
     -- problem simulation
     , dimension : Dimension -- how many dimensions are we showing
-    , range : Float --
+    , range : Float
+    , showSubBox : Bool
+    , subBoxes : List (Block3d.Block3d Length.Meters Coords)
 
     -- scene3d entities
     , points : List AnimatedPoint -- list of points
@@ -96,14 +99,17 @@ initialModel =
     , elevation = Angle.degrees 30
     , distance = Length.meters 200
     , orbiting = False
+    , orthographic = True
     , dimension = Dim3D
     , range = 4
+    , showSubBox = False
+    , subBoxes = []
     , points = List.map createAnimatedEntity points3D
     , box = Nothing
     , colourEdges = False
     , showRhombiDodec = False
     , showTetrakis = False
-    , showRhombiCube = False
+    , showRhombiCube = True
     , axes =
         { x =
             Scene3d.lineSegment (Scene3d.Material.color Color.red) <|
@@ -178,8 +184,8 @@ ifInRangeofBox range maybeBox entity =
                         Point3d.zCoordinate entity.position
                             |> diff boundingBox.minZ boundingBox.maxZ
                 in
-                Quantity.lessThanOrEqualTo (Length.meters range) <|
-                    (Quantity.sum [ xOff, yOff, zOff ] |> Debug.log "sum")
+                Quantity.sum [ xOff, yOff, zOff ]
+                    |> Quantity.lessThanOrEqualTo (Length.meters range)
 
         Nothing ->
             False
@@ -222,6 +228,7 @@ type Msg
       -- camera control
     | ToTopDownCamera
     | ToInitialCamera
+    | Orthographic Bool
     | ZoomChange Html.Events.Extra.Wheel.Event
       -- simulation stuff
     | NextD
@@ -236,6 +243,7 @@ type Msg
     | DrawTetraHex Bool
     | DrawRhombiCube Bool
     | ToggleEdges Bool
+    | ShowSubBox Bool
       -- animation stuff
     | Tick Duration
 
@@ -308,10 +316,6 @@ update msg model =
                     )
 
         Tick duration ->
-            let
-                _ =
-                    Debug.log "frametime (ms)" (Duration.inMilliseconds duration)
-            in
             ( { model
                 | points = List.map (animateEntity duration) model.points
               }
@@ -333,6 +337,9 @@ update msg model =
               }
             , Cmd.none
             )
+
+        Orthographic b ->
+            ( { model | orthographic = b }, Cmd.none )
 
         HighlightPointsPos ->
             ( { model
@@ -368,7 +375,7 @@ update msg model =
             ( { model
                 | box =
                     Just <|
-                        createBoundingBox ( -64, -32, -32 ) 64
+                        createBoxHelper 64 ( -64, -32, -32 )
               }
             , Cmd.none
             )
@@ -377,7 +384,7 @@ update msg model =
             ( { model
                 | box =
                     Just <|
-                        createBoundingBox ( 16, -32, -32 ) 16
+                        createBoxHelper 16 ( 0, 0, 0 )
               }
             , Cmd.none
             )
@@ -386,7 +393,7 @@ update msg model =
             ( { model
                 | box =
                     Just <|
-                        createBoundingBox ( -8, -8, -8 ) 16
+                        createBoxHelper 1 ( 0, 0, 0 )
               }
             , Cmd.none
             )
@@ -396,6 +403,18 @@ update msg model =
 
         ToggleEdges b ->
             ( { model | colourEdges = b }, Cmd.none )
+
+        ShowSubBox b ->
+            let
+                sub =
+                    case ( b, model.box ) of
+                        ( True, Just box ) ->
+                            createSubBoxes model.dimension box
+
+                        _ ->
+                            []
+            in
+            ( { model | showSubBox = b, subBoxes = sub }, Cmd.none )
 
         DrawRhombiDocec b ->
             ( { model | showRhombiDodec = b }, Cmd.none )
@@ -420,17 +439,97 @@ update msg model =
             )
 
 
-createBoundingBox :
-    ( Float, Float, Float )
-    -> Float
+createBoxHelper :
+    Float
+    -> ( Float, Float, Float )
     -> Block3d.Block3d Length.Meters Coords
-createBoundingBox topLeftPos width =
+createBoxHelper width centrePoint =
     let
-        block ( fromx, fromy, fromz ) w =
-            Block3d.from (Point3d.meters fromx fromy fromz)
-                (Point3d.meters (fromx + w) (fromy + w) (fromz + w))
+        w =
+            Length.meters width
+
+        centre =
+            case centrePoint of
+                ( x, y, z ) ->
+                    ( Length.meters x, Length.meters y, Length.meters z )
     in
-    block topLeftPos width
+    createBox w centre
+
+
+createBox :
+    Quantity Float Length.Meters
+    ->
+        ( Quantity Float Length.Meters
+        , Quantity Float Length.Meters
+        , Quantity Float Length.Meters
+        )
+    -> Block3d.Block3d Length.Meters Coords
+createBox width centrePoint =
+    let
+        block r ( fromx, fromy, fromz ) =
+            Block3d.from
+                (Point3d.xyz
+                    (Quantity.minus r fromx)
+                    (Quantity.minus r fromy)
+                    (Quantity.minus r fromz)
+                )
+                (Point3d.xyz
+                    (Quantity.plus r fromx)
+                    (Quantity.plus r fromy)
+                    (Quantity.plus r fromz)
+                )
+    in
+    block (Quantity.half width) centrePoint
+
+
+createSubBoxes :
+    Dimension
+    -> Block3d.Block3d Length.Meters Coords
+    -> List (Block3d.Block3d Length.Meters Coords)
+createSubBoxes dim parentBox =
+    let
+        newWidth =
+            case Block3d.dimensions parentBox of
+                ( _, w, _ ) ->
+                    Quantity.half w
+
+        moveDistance =
+            Quantity.half newWidth
+
+        xAxis =
+            Block3d.xAxis parentBox
+
+        splitAlongX =
+            List.map Point3d.coordinates
+                [ Point3d.along xAxis moveDistance
+                , Point3d.along xAxis (Quantity.negate moveDistance)
+                ]
+                |> List.map (createBox newWidth)
+    in
+    case dim of
+        Dim1D ->
+            splitAlongX
+
+        Dim2D ->
+            let
+                yDirection =
+                    Block3d.yAxis parentBox
+                        |> Axis3d.direction
+
+                doubleThenTranslate box =
+                    [ Block3d.translateIn yDirection moveDistance box
+                    , Block3d.translateIn
+                        (Direction3d.reverse yDirection)
+                        moveDistance
+                        box
+                    ]
+            in
+            List.map doubleThenTranslate splitAlongX
+                |> List.concat
+
+        Dim3D ->
+            Block3d.vertices parentBox
+                |> List.map (Block3d.from (Block3d.centerPoint parentBox))
 
 
 animateEntity : Duration -> AnimatedPoint -> AnimatedPoint
@@ -541,6 +640,26 @@ needsAnimated entity =
     List.length entity.futurePositions > 0
 
 
+colourLikeAxis : LineSegment3d.LineSegment3d units coordinates -> Color.Color
+colourLikeAxis edge =
+    case LineSegment3d.direction edge of
+        Just dir ->
+            if Direction3d.xComponent dir /= 0 then
+                Color.red
+
+            else if Direction3d.yComponent dir /= 0 then
+                Color.green
+
+            else if Direction3d.zComponent dir /= 0 then
+                Color.blue
+
+            else
+                Color.white
+
+        Nothing ->
+            Color.white
+
+
 view : Model -> Html Msg
 view model =
     let
@@ -563,37 +682,28 @@ view model =
                 Dim3D ->
                     [ model.axes.x, model.axes.y, model.axes.z ]
 
+        createEdges box =
+            let
+                createEdge lineEdge =
+                    let
+                        edgeColour =
+                            if model.colourEdges then
+                                colourLikeAxis lineEdge
+
+                            else
+                                Color.white
+                    in
+                    Scene3d.lineSegment
+                        (Scene3d.Material.color edgeColour)
+                        lineEdge
+            in
+            Block3d.edges box
+                |> List.map createEdge
+
         boundingBox =
             case model.box of
                 Just box ->
-                    let
-                        createEdge lineEdge =
-                            let
-                                edgeColour =
-                                    if model.colourEdges then
-                                        case LineSegment3d.direction lineEdge of
-                                            Just dir ->
-                                                if Direction3d.xComponent dir /= 0 then
-                                                    Color.red
-
-                                                else if Direction3d.yComponent dir /= 0 then
-                                                    Color.green
-
-                                                else
-                                                    Color.blue
-
-                                            Nothing ->
-                                                Color.rgba 0 0 0 0
-
-                                    else
-                                        Color.rgba 0 0 0 0
-                            in
-                            Scene3d.lineSegment
-                                (Scene3d.Material.color edgeColour)
-                                lineEdge
-                    in
-                    Block3d.edges box
-                        |> List.map createEdge
+                    createEdges box
 
                 Nothing ->
                     []
@@ -636,6 +746,14 @@ view model =
 
                 Nothing ->
                     []
+
+        showSubBox =
+            if model.showSubBox then
+                List.map createEdges model.subBoxes
+                    |> List.concat
+
+            else
+                []
     in
     main_
         [ style "box-sizing" "border-box"
@@ -657,10 +775,17 @@ view model =
             ]
             [ Scene3d.unlit
                 { camera =
-                    Camera3d.perspective
-                        { viewpoint = viewpoint
-                        , verticalFieldOfView = Angle.degrees 30
-                        }
+                    if model.orthographic then
+                        Camera3d.orthographic
+                            { viewpoint = viewpoint
+                            , viewportHeight = Quantity.half model.distance
+                            }
+
+                    else
+                        Camera3d.perspective
+                            { viewpoint = viewpoint
+                            , verticalFieldOfView = Angle.degrees 30
+                            }
                 , clipDepth = Length.meters 0.1
                 , dimensions = ( Pixels.int 800, Pixels.int 600 )
                 , background = Scene3d.transparentBackground
@@ -671,6 +796,7 @@ view model =
                         ++ showRhombiDodec
                         ++ showTetraHex
                         ++ showRhombiCube
+                        ++ showSubBox
                 }
             ]
         , section [ style "flex" "1" ] <|
@@ -679,6 +805,17 @@ view model =
             , p [] [ text "camera" ]
             , button [ onClick ToTopDownCamera ] [ text "top down" ]
             , button [ onClick ToInitialCamera ] [ text "fourtyfive" ]
+            , div [ style "display" "flex", style "flex-direction" "column" ]
+                [ label []
+                    [ input
+                        [ type_ "checkbox"
+                        , onClick <| Orthographic (not model.orthographic)
+                        , checked model.orthographic
+                        ]
+                        []
+                    , text "toggle orthographic"
+                    ]
+                ]
             , p [] [ text "highlight" ]
             , button
                 [ onClick HighlightPointsPos ]
@@ -695,19 +832,52 @@ view model =
             , button [ onClick AddCentreBox ] [ text "add wee example box" ]
             ]
                 ++ (if model.box /= Nothing then
-                        [ button
+                        [ br [] []
+                        , button
                             [ onClick <| ToggleEdges (not model.colourEdges) ]
                             [ text "colour box edges" ]
                         , button [ onClick ClearBox ] [ text "clear box" ]
                         , button
-                            [ onClick <| DrawRhombiDocec (not model.showRhombiDodec) ]
-                            [ text "draw rhombic dodecahedron" ]
-                        , button
-                            [ onClick <| DrawTetraHex (not model.showTetrakis) ]
-                            [ text "draw tetrakis hexahahedron" ]
-                        , button
-                            [ onClick <| DrawRhombiCube (not model.showRhombiCube) ]
-                            [ text "draw rhombicubeoctahedron" ]
+                            [ onClick <| ShowSubBox (not model.showSubBox) ]
+                            [ text "show sub box" ]
+                        , div
+                            [ style "display" "flex"
+                            , style "flex-direction" "column"
+                            , style "user-select" "none"
+                            ]
+                            [ label [ style "color" "orange" ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , onClick <|
+                                        DrawRhombiDocec
+                                            (not model.showRhombiDodec)
+                                    , checked model.showRhombiDodec
+                                    ]
+                                    []
+                                , text "draw rhombic dodecahedron"
+                                ]
+                            , label [ style "color" "yellow" ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , onClick <|
+                                        DrawTetraHex (not model.showTetrakis)
+                                    , checked model.showTetrakis
+                                    ]
+                                    []
+                                , text "draw tetrakis hexahahedron"
+                                ]
+                            , label [ style "color" "purple" ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , onClick <|
+                                        DrawRhombiCube
+                                            (not model.showRhombiCube)
+                                    , checked model.showRhombiCube
+                                    ]
+                                    []
+                                , text "draw rhombicubeoctahedron"
+                                ]
+                            ]
                         ]
 
                     else
@@ -734,7 +904,7 @@ drawRhombiDodecEdges centrePoint cubeVertex =
             LineSegment3d.from from to
                 |> LineSegment3d.rotateAround verticalAxis (Angle.degrees 90)
                 |> LineSegment3d.rotateAround axis (Angle.degrees rotate)
-                |> Scene3d.lineSegment (Scene3d.Material.color Color.yellow)
+                |> Scene3d.lineSegment (Scene3d.Material.color Color.orange)
     in
     case axisThroughCentre of
         Just axis ->
@@ -789,7 +959,7 @@ drawTetraHexEdges range box =
 
         isShortSegment segment =
             LineSegment3d.length segment
-                |> Quantity.lessThan width
+                |> Quantity.lessThan (Quantity.plus width (Length.meters range))
 
         createEdges point =
             List.map (createLineSegment point) (Block3d.vertices box)
@@ -812,12 +982,6 @@ drawRhombiCubeEdges range box =
         centrePoint =
             Block3d.centerPoint box
 
-        diagDistance =
-            Block3d.vertices box
-                |> List.head
-                |> Maybe.withDefault centrePoint
-                |> Point3d.distanceFrom centrePoint
-
         xAxis v =
             Axis3d.through v Direction3d.x
 
@@ -839,17 +1003,33 @@ drawRhombiCubeEdges range box =
             , Point3d.along (zAxis vertex) (Quantity.negate distance)
             ]
 
-        vertices =
+        allVertices =
             List.map createVertices (Block3d.vertices box)
                 |> List.concat
-                |> List.filter isOuterVertex
+
+        findMaxDistance vertex max =
+            let
+                d =
+                    Point3d.distanceFrom vertex centrePoint
+            in
+            if Quantity.greaterThan max d then
+                d
+
+            else
+                max
+
+        outerVertices =
+            List.filter isOuterVertex allVertices
 
         isOuterVertex vertex =
             Point3d.distanceFrom vertex centrePoint
-                |> Quantity.greaterThan diagDistance
+                |> Quantity.equalWithin (Length.meters 0.1) maxDist
 
-        buildEdges allVertices vertex =
-            List.map (createLine vertex) allVertices
+        maxDist =
+            List.foldl findMaxDistance (Length.meters 0) allVertices
+
+        buildEdges vertices vertex =
+            List.map (createLine vertex) vertices
                 |> List.filter isShortSegment
                 |> List.map
                     (Scene3d.lineSegment
@@ -860,15 +1040,34 @@ drawRhombiCubeEdges range box =
             LineSegment3d.from from to
 
         isShortSegment lineSegment =
-            LineSegment3d.length lineSegment
-                |> Quantity.lessThanOrEqualTo width
+            let
+                length =
+                    LineSegment3d.length lineSegment
+
+                lengthSquared =
+                    Quantity.squared length
+
+                -- outer face edges have same length as inner cube
+                isOuterFaceEdge =
+                    Quantity.equalWithin (Length.meters 0.1) width length
+
+                -- connecting diagonal edges have length of sqrt(2r^2)
+                -- compare to length^2 to skip doing the sqrt
+                isConnectingDiagEdge =
+                    Quantity.squared (Length.meters range)
+                        |> Quantity.multiplyBy 2
+                        |> Quantity.equalWithin
+                            (Quantity.squared (Length.meters 0.1))
+                            lengthSquared
+            in
+            isOuterFaceEdge || isConnectingDiagEdge
 
         width =
             case Block3d.dimensions box of
                 ( _, w, _ ) ->
                     w
     in
-    List.map (buildEdges vertices) vertices
+    List.map (buildEdges outerVertices) outerVertices
         |> List.concat
 
 
