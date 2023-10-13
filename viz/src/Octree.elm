@@ -75,8 +75,9 @@ type alias Model =
     , points : List AnimatedPoint -- list of points
     , box : Maybe (Block3d.Block3d Length.Meters Coords)
     , colourEdges : Bool
-    , showRhombic : Bool
-    , showRhombicReal : Bool
+    , showRhombiDodec : Bool
+    , showTetrakis : Bool
+    , showRhombiCube : Bool
     , axes :
         { x : Scene3d.Entity Coords
         , y : Scene3d.Entity Coords
@@ -100,8 +101,9 @@ initialModel =
     , points = List.map createAnimatedEntity points3D
     , box = Nothing
     , colourEdges = False
-    , showRhombic = False
-    , showRhombicReal = False
+    , showRhombiDodec = False
+    , showTetrakis = False
+    , showRhombiCube = False
     , axes =
         { x =
             Scene3d.lineSegment (Scene3d.Material.color Color.red) <|
@@ -177,7 +179,7 @@ ifInRangeofBox range maybeBox entity =
                             |> diff boundingBox.minZ boundingBox.maxZ
                 in
                 Quantity.lessThanOrEqualTo (Length.meters range) <|
-                    Quantity.sum [ xOff, yOff, zOff ]
+                    (Quantity.sum [ xOff, yOff, zOff ] |> Debug.log "sum")
 
         Nothing ->
             False
@@ -230,8 +232,9 @@ type Msg
     | AddRightBox
     | AddCentreBox
     | ClearBox
-    | DrawRhombucD Bool
-    | DrawRhombucDReal Bool
+    | DrawRhombiDocec Bool
+    | DrawTetraHex Bool
+    | DrawRhombiCube Bool
     | ToggleEdges Bool
       -- animation stuff
     | Tick Duration
@@ -394,11 +397,14 @@ update msg model =
         ToggleEdges b ->
             ( { model | colourEdges = b }, Cmd.none )
 
-        DrawRhombucD b ->
-            ( { model | showRhombic = b }, Cmd.none )
+        DrawRhombiDocec b ->
+            ( { model | showRhombiDodec = b }, Cmd.none )
 
-        DrawRhombucDReal b ->
-            ( { model | showRhombicReal = b }, Cmd.none )
+        DrawTetraHex b ->
+            ( { model | showTetrakis = b }, Cmd.none )
+
+        DrawRhombiCube b ->
+            ( { model | showRhombiCube = b }, Cmd.none )
 
         ZoomChange event ->
             ( { model
@@ -577,10 +583,10 @@ view model =
                                                     Color.blue
 
                                             Nothing ->
-                                                Color.white
+                                                Color.rgba 0 0 0 0
 
                                     else
-                                        Color.white
+                                        Color.rgba 0 0 0 0
                             in
                             Scene3d.lineSegment
                                 (Scene3d.Material.color edgeColour)
@@ -592,13 +598,13 @@ view model =
                 Nothing ->
                     []
 
-        showRhombic =
+        showRhombiDodec =
             case model.box of
                 Just box ->
-                    if model.showRhombic then
+                    if model.showRhombiDodec then
                         Block3d.vertices box
                             |> List.map
-                                (drawRhombicEdges (Block3d.centerPoint box))
+                                (drawRhombiDodecEdges (Block3d.centerPoint box))
                             |> List.concat
 
                     else
@@ -607,11 +613,23 @@ view model =
                 Nothing ->
                     []
 
-        showRhombicReal =
+        showTetraHex =
             case model.box of
                 Just box ->
-                    if model.showRhombicReal then
-                        drawRhombicEdgesReal model.range box
+                    if model.showTetrakis then
+                        drawTetraHexEdges model.range box
+
+                    else
+                        []
+
+                Nothing ->
+                    []
+
+        showRhombiCube =
+            case model.box of
+                Just box ->
+                    if model.showRhombiCube then
+                        drawRhombiCubeEdges model.range box
 
                     else
                         []
@@ -650,8 +668,9 @@ view model =
                     axes
                         ++ boundingBox
                         ++ List.map createSceneEntity model.points
-                        ++ showRhombic
-                        ++ showRhombicReal
+                        ++ showRhombiDodec
+                        ++ showTetraHex
+                        ++ showRhombiCube
                 }
             ]
         , section [ style "flex" "1" ] <|
@@ -681,11 +700,14 @@ view model =
                             [ text "colour box edges" ]
                         , button [ onClick ClearBox ] [ text "clear box" ]
                         , button
-                            [ onClick <| DrawRhombucD (not model.showRhombic) ]
+                            [ onClick <| DrawRhombiDocec (not model.showRhombiDodec) ]
                             [ text "draw rhombic dodecahedron" ]
                         , button
-                            [ onClick <| DrawRhombucDReal (not model.showRhombicReal) ]
-                            [ text "draw weird rhombic dodecahedron" ]
+                            [ onClick <| DrawTetraHex (not model.showTetrakis) ]
+                            [ text "draw tetrakis hexahahedron" ]
+                        , button
+                            [ onClick <| DrawRhombiCube (not model.showRhombiCube) ]
+                            [ text "draw rhombicubeoctahedron" ]
                         ]
 
                     else
@@ -694,11 +716,13 @@ view model =
         ]
 
 
-drawRhombicEdges :
+{-| Rhombic Dodecahedron <https://en.wikipedia.org/wiki/Rhombic_dodecahedron>
+-}
+drawRhombiDodecEdges :
     Point3d.Point3d Length.Meters Coords
     -> Point3d.Point3d Length.Meters Coords
     -> List (Scene3d.Entity Coords)
-drawRhombicEdges centrePoint cubeVertex =
+drawRhombiDodecEdges centrePoint cubeVertex =
     let
         axisThroughCentre =
             Axis3d.throughPoints cubeVertex centrePoint
@@ -720,28 +744,36 @@ drawRhombicEdges centrePoint cubeVertex =
             []
 
 
-drawRhombicEdgesReal :
+{-| Tetrakis Hexahedron <https://en.wikipedia.org/wiki/Tetrakis_hexahedron>
+-}
+drawTetraHexEdges :
     Float
     -> Block3d.Block3d Length.Meters Coords
     -> List (Scene3d.Entity Coords)
-drawRhombicEdgesReal range box =
+drawTetraHexEdges range box =
     let
         centrePoint =
             Block3d.centerPoint box
 
-        vertices =
-            Block3d.vertices box
+        createAxis =
+            Axis3d.through centrePoint
 
         xAxis =
-            Axis3d.through centrePoint Direction3d.x
-                -- |> Axis3d.moveTo centrePoint
-                |> Debug.log "xaxis"
+            createAxis Direction3d.x
 
         yAxis =
-            Axis3d.through centrePoint Direction3d.y
+            createAxis Direction3d.y
 
         zAxis =
-            Axis3d.through centrePoint Direction3d.z
+            createAxis Direction3d.z
+
+        width =
+            case Block3d.dimensions box of
+                ( _, w, _ ) ->
+                    w
+
+        distance =
+            Quantity.plus (Quantity.half width) (Length.meters range)
 
         points =
             [ Point3d.along xAxis distance
@@ -755,26 +787,88 @@ drawRhombicEdgesReal range box =
         createLineSegment from to =
             LineSegment3d.from from to
 
+        isShortSegment segment =
+            LineSegment3d.length segment
+                |> Quantity.lessThan width
+
+        createEdges point =
+            List.map (createLineSegment point) (Block3d.vertices box)
+                |> List.filter isShortSegment
+                |> List.map
+                    (Scene3d.lineSegment (Scene3d.Material.color Color.yellow))
+    in
+    List.map createEdges points
+        |> List.concat
+
+
+{-| Rhombicuboctahedron <https://en.wikipedia.org/wiki/Rhombicuboctahedron>
+-}
+drawRhombiCubeEdges :
+    Float
+    -> Block3d.Block3d Length.Meters Coords
+    -> List (Scene3d.Entity Coords)
+drawRhombiCubeEdges range box =
+    let
+        centrePoint =
+            Block3d.centerPoint box
+
+        diagDistance =
+            Block3d.vertices box
+                |> List.head
+                |> Maybe.withDefault centrePoint
+                |> Point3d.distanceFrom centrePoint
+
+        xAxis v =
+            Axis3d.through v Direction3d.x
+
+        yAxis v =
+            Axis3d.through v Direction3d.y
+
+        zAxis v =
+            Axis3d.through v Direction3d.z
+
+        distance =
+            Length.meters range
+
+        createVertices vertex =
+            [ Point3d.along (xAxis vertex) distance
+            , Point3d.along (xAxis vertex) (Quantity.negate distance)
+            , Point3d.along (yAxis vertex) distance
+            , Point3d.along (yAxis vertex) (Quantity.negate distance)
+            , Point3d.along (zAxis vertex) distance
+            , Point3d.along (zAxis vertex) (Quantity.negate distance)
+            ]
+
+        vertices =
+            List.map createVertices (Block3d.vertices box)
+                |> List.concat
+                |> List.filter isOuterVertex
+
+        isOuterVertex vertex =
+            Point3d.distanceFrom vertex centrePoint
+                |> Quantity.greaterThan diagDistance
+
+        buildEdges allVertices vertex =
+            List.map (createLine vertex) allVertices
+                |> List.filter isShortSegment
+                |> List.map
+                    (Scene3d.lineSegment
+                        (Scene3d.Material.color Color.purple)
+                    )
+
+        createLine from to =
+            LineSegment3d.from from to
+
+        isShortSegment lineSegment =
+            LineSegment3d.length lineSegment
+                |> Quantity.lessThanOrEqualTo width
+
         width =
             case Block3d.dimensions box of
                 ( _, w, _ ) ->
-                    w |> Debug.log "width"
-
-        distance =
-            Quantity.plus (Quantity.half width) (Length.meters range) |> Debug.log "distance"
-
-        keepshort segment =
-            LineSegment3d.length segment
-                |> Debug.log "lengths"
-                |> Quantity.lessThan width
+                    w
     in
-    List.map
-        (\point1 ->
-            List.map (createLineSegment point1) vertices
-                |> List.filter keepshort
-                |> List.map (Scene3d.lineSegment (Scene3d.Material.color Color.yellow))
-        )
-        points
+    List.map (buildEdges vertices) vertices
         |> List.concat
 
 
