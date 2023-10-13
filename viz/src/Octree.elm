@@ -3,6 +3,7 @@ module Octree exposing (main)
 import Angle
 import Axis3d
 import Block3d
+import BoundingBox3d exposing (BoundingBox3d)
 import Browser
 import Browser.Events
 import Camera3d
@@ -68,13 +69,14 @@ type alias Model =
 
     -- problem simulation
     , dimension : Dimension -- how many dimensions are we showing
-    , range : Int --
+    , range : Float --
 
     -- scene3d entities
     , points : List AnimatedPoint -- list of points
     , box : Maybe (Block3d.Block3d Length.Meters Coords)
     , colourEdges : Bool
     , showRhombic : Bool
+    , showRhombicReal : Bool
     , axes :
         { x : Scene3d.Entity Coords
         , y : Scene3d.Entity Coords
@@ -94,11 +96,12 @@ initialModel =
     , distance = Length.meters 200
     , orbiting = False
     , dimension = Dim3D
-    , range = 0
+    , range = 4
     , points = List.map createAnimatedEntity points3D
     , box = Nothing
     , colourEdges = False
     , showRhombic = False
+    , showRhombicReal = False
     , axes =
         { x =
             Scene3d.lineSegment (Scene3d.Material.color Color.red) <|
@@ -135,17 +138,46 @@ ifNegative entity =
 
 
 ifInRangeofBox :
-    Maybe (Block3d.Block3d Length.Meters Coords)
+    Float
+    -> Maybe (Block3d.Block3d Length.Meters Coords)
     -> AnimatedPoint
     -> Bool
-ifInRangeofBox maybeBox entity =
+ifInRangeofBox range maybeBox entity =
     case maybeBox of
         Just box ->
             if Block3d.contains entity.position box then
                 True
 
             else
-                False
+                let
+                    boundingBox =
+                        Block3d.boundingBox box
+                            |> BoundingBox3d.extrema
+
+                    diff min max test =
+                        if Quantity.lessThan min test then
+                            Quantity.difference min test
+
+                        else if Quantity.greaterThan max test then
+                            Quantity.difference test max
+
+                        else
+                            Length.meters 0
+
+                    xOff =
+                        Point3d.xCoordinate entity.position
+                            |> diff boundingBox.minX boundingBox.maxX
+
+                    yOff =
+                        Point3d.yCoordinate entity.position
+                            |> diff boundingBox.minY boundingBox.maxY
+
+                    zOff =
+                        Point3d.zCoordinate entity.position
+                            |> diff boundingBox.minZ boundingBox.maxZ
+                in
+                Quantity.lessThanOrEqualTo (Length.meters range) <|
+                    Quantity.sum [ xOff, yOff, zOff ]
 
         Nothing ->
             False
@@ -188,7 +220,7 @@ type Msg
       -- camera control
     | ToTopDownCamera
     | ToInitialCamera
-    | ZoomChange Float
+    | ZoomChange Html.Events.Extra.Wheel.Event
       -- simulation stuff
     | NextD
     | HighlightPointsPos
@@ -199,6 +231,7 @@ type Msg
     | AddCentreBox
     | ClearBox
     | DrawRhombucD Bool
+    | DrawRhombucDReal Bool
     | ToggleEdges Bool
       -- animation stuff
     | Tick Duration
@@ -322,7 +355,7 @@ update msg model =
             ( { model
                 | points =
                     List.map
-                        (highlight (ifInRangeofBox model.box))
+                        (highlight (ifInRangeofBox model.range model.box))
                         model.points
               }
             , Cmd.none
@@ -364,11 +397,18 @@ update msg model =
         DrawRhombucD b ->
             ( { model | showRhombic = b }, Cmd.none )
 
-        ZoomChange delta ->
+        DrawRhombucDReal b ->
+            ( { model | showRhombicReal = b }, Cmd.none )
+
+        ZoomChange event ->
             ( { model
                 | distance =
-                    Quantity.plus model.distance (Length.meters <| delta / 10)
-                        |> Quantity.clamp (Length.meters 50) (Length.meters 250)
+                    Quantity.plus
+                        model.distance
+                        (Length.meters <| event.deltaY / 10)
+                        |> Quantity.clamp
+                            (Length.meters 50)
+                            (Length.meters 250)
               }
             , Cmd.none
             )
@@ -567,14 +607,22 @@ view model =
                 Nothing ->
                     []
 
-        zoomMsg : Html.Events.Extra.Wheel.Event -> Msg
-        zoomMsg event =
-            ZoomChange event.deltaY
+        showRhombicReal =
+            case model.box of
+                Just box ->
+                    if model.showRhombicReal then
+                        drawRhombicEdgesReal model.range box
+
+                    else
+                        []
+
+                Nothing ->
+                    []
     in
     main_
         [ style "box-sizing" "border-box"
         , style "width" "100%"
-        , style "height" "100vh"
+        , style "min-height" "100vh"
         , style "padding" "1rem"
         , style "display" "flex"
         , style "gap" "1rem"
@@ -584,7 +632,7 @@ view model =
         ]
         [ section
             [ Html.Events.onMouseDown MouseDown
-            , Html.Events.Extra.Wheel.onWheel zoomMsg
+            , Html.Events.Extra.Wheel.onWheel ZoomChange
             , style "border" "2px solid black"
             , style "background" "slategrey"
             , style "cursor" "move"
@@ -603,6 +651,7 @@ view model =
                         ++ boundingBox
                         ++ List.map createSceneEntity model.points
                         ++ showRhombic
+                        ++ showRhombicReal
                 }
             ]
         , section [ style "flex" "1" ] <|
@@ -634,6 +683,9 @@ view model =
                         , button
                             [ onClick <| DrawRhombucD (not model.showRhombic) ]
                             [ text "draw rhombic dodecahedron" ]
+                        , button
+                            [ onClick <| DrawRhombucDReal (not model.showRhombicReal) ]
+                            [ text "draw weird rhombic dodecahedron" ]
                         ]
 
                     else
@@ -666,6 +718,64 @@ drawRhombicEdges centrePoint cubeVertex =
 
         Nothing ->
             []
+
+
+drawRhombicEdgesReal :
+    Float
+    -> Block3d.Block3d Length.Meters Coords
+    -> List (Scene3d.Entity Coords)
+drawRhombicEdgesReal range box =
+    let
+        centrePoint =
+            Block3d.centerPoint box
+
+        vertices =
+            Block3d.vertices box
+
+        xAxis =
+            Axis3d.through centrePoint Direction3d.x
+                -- |> Axis3d.moveTo centrePoint
+                |> Debug.log "xaxis"
+
+        yAxis =
+            Axis3d.through centrePoint Direction3d.y
+
+        zAxis =
+            Axis3d.through centrePoint Direction3d.z
+
+        points =
+            [ Point3d.along xAxis distance
+            , Point3d.along xAxis (Quantity.negate distance)
+            , Point3d.along yAxis distance
+            , Point3d.along yAxis (Quantity.negate distance)
+            , Point3d.along zAxis distance
+            , Point3d.along zAxis (Quantity.negate distance)
+            ]
+
+        createLineSegment from to =
+            LineSegment3d.from from to
+
+        width =
+            case Block3d.dimensions box of
+                ( _, w, _ ) ->
+                    w |> Debug.log "width"
+
+        distance =
+            Quantity.plus (Quantity.half width) (Length.meters range) |> Debug.log "distance"
+
+        keepshort segment =
+            LineSegment3d.length segment
+                |> Debug.log "lengths"
+                |> Quantity.lessThan width
+    in
+    List.map
+        (\point1 ->
+            List.map (createLineSegment point1) vertices
+                |> List.filter keepshort
+                |> List.map (Scene3d.lineSegment (Scene3d.Material.color Color.yellow))
+        )
+        points
+        |> List.concat
 
 
 randomPoints : List ( Float, Float, Float )
