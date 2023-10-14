@@ -63,6 +63,12 @@ type SimulationState
     | Solved (Point3d.Point3d Length.Meters Coords)
 
 
+type SimulationControl
+    = Manual
+    | FastForward
+    | Skip
+
+
 type alias Target =
     { position : Point3d.Point3d Length.Meters Coords
     , speedMult : Float
@@ -86,6 +92,7 @@ type alias Model =
 
     -- problem simulation
     , state : SimulationState
+    , control : SimulationControl
     , dimension : Dimension -- how many dimensions are we showing
     , range : Float
     , candidates : PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
@@ -115,6 +122,7 @@ initialModel =
 
     -- problem simulation
     , state = Uninitialised
+    , control = Manual
     , dimension = Dim3D
     , range = 4
     , candidates = []
@@ -234,6 +242,7 @@ type Msg
     | StartSim
     | StepSim
     | NextD
+    | SetControl SimulationControl
       -- optional toggles
     | DrawRhombiCube Bool
     | DrawRhombiDocec Bool
@@ -242,7 +251,7 @@ type Msg
     | Tick Duration
 
 
-update : Msg -> Model -> ( Model, Cmd msg )
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         MouseDown ->
@@ -351,6 +360,17 @@ update msg model =
         DrawRhombiCube b ->
             ( { model | showRhombiCube = b }, Cmd.none )
 
+        SetControl c ->
+            let
+                newModel =
+                    { model | control = c }
+            in
+            if c /= Skip then
+                ( newModel, Cmd.none )
+
+            else
+                update StepSim newModel
+
         ZoomChange event ->
             ( { model
                 | distance =
@@ -368,6 +388,8 @@ update msg model =
             let
                 initialBox =
                     createBoxFromFloat 128
+                        -- dimensions we are searching for need to be offset
+                        -- by half unit to ensure solution is an integer
                         (case model.dimension of
                             Dim1D ->
                                 ( -0.5, 0, 0 )
@@ -387,6 +409,7 @@ update msg model =
                 | state = Start
                 , box = Nothing
                 , points = initialPoints
+                , control = Manual
                 , candidates =
                     PriorityQueue.insert
                         (toFloat <| List.length model.points)
@@ -432,25 +455,30 @@ update msg model =
                                             Length.inMeters w
                                                 |> (*) 0.001
                                                 |> (-) 1
+
+                                newModel =
+                                    { model
+                                        | state = ScoredBox score
+                                        , points = newPoints
+                                        , toBeScored = tail
+                                        , candidates =
+                                            PriorityQueue.insert
+                                                (score + smallBoxBoost)
+                                                boxtoScore
+                                                model.candidates
+                                        , box = Just boxtoScore
+                                        , subBoxes = []
+                                    }
                             in
-                            ( { model
-                                | state = ScoredBox score
-                                , points = newPoints
-                                , toBeScored = tail
-                                , candidates =
-                                    PriorityQueue.insert
-                                        (score + smallBoxBoost)
-                                        boxtoScore
-                                        model.candidates
-                                , box = Just boxtoScore
-                                , subBoxes = []
-                              }
-                            , Cmd.none
-                            )
+                            if model.control == Skip then
+                                update StepSim newModel
+
+                            else
+                                ( newModel, Cmd.none )
 
                         _ ->
-                            -- no boxes to be scored
-                            -- so try to pop a new candidate and split into subboxes
+                            -- no boxes to be scored so try to pop a new
+                            -- candidate and split into subboxes
                             case PriorityQueue.pop model.candidates of
                                 ( Just poppedBox, newCandidates ) ->
                                     let
@@ -472,18 +500,23 @@ update msg model =
                                                         (ifInRangeofBox model.range poppedBox)
                                                     )
                                                     model.points
+
+                                            newModel =
+                                                { model
+                                                    | state =
+                                                        Solved
+                                                            (Block3d.centerPoint poppedBox)
+                                                    , candidates = newCandidates
+                                                    , points = newPoints
+                                                    , subBoxes = []
+                                                    , box = Just poppedBox
+                                                }
                                         in
-                                        ( { model
-                                            | state =
-                                                Solved
-                                                    (Block3d.centerPoint poppedBox)
-                                            , candidates = newCandidates
-                                            , points = newPoints
-                                            , subBoxes = []
-                                            , box = Just poppedBox
-                                          }
-                                        , Cmd.none
-                                        )
+                                        if model.control == Skip then
+                                            update StepSim newModel
+
+                                        else
+                                            ( newModel, Cmd.none )
 
                                     else
                                         let
@@ -495,17 +528,22 @@ update msg model =
                                             pointsNoHighlight =
                                                 List.map (highlight (\_ -> False))
                                                     model.points
+
+                                            newModel =
+                                                { model
+                                                    | state = SplitIntoSubBoxes
+                                                    , candidates = newCandidates
+                                                    , toBeScored = List.reverse subBoxes
+                                                    , points = pointsNoHighlight
+                                                    , subBoxes = subBoxes
+                                                    , box = Just poppedBox
+                                                }
                                         in
-                                        ( { model
-                                            | state = SplitIntoSubBoxes
-                                            , candidates = newCandidates
-                                            , toBeScored = List.reverse subBoxes
-                                            , points = pointsNoHighlight
-                                            , subBoxes = subBoxes
-                                            , box = Just poppedBox
-                                          }
-                                        , Cmd.none
-                                        )
+                                        if model.control == Skip then
+                                            update StepSim newModel
+
+                                        else
+                                            ( newModel, Cmd.none )
 
                                 _ ->
                                     ( model, Cmd.none )
@@ -705,6 +743,35 @@ subscriptions model =
                 else
                     []
                )
+            ++ (if
+                    simulationInProgress model.state
+                        && model.control
+                        == FastForward
+                then
+                    [ Browser.Events.onAnimationFrame (always StepSim) ]
+
+                else
+                    []
+               )
+
+
+simulationInProgress : SimulationState -> Bool
+simulationInProgress state =
+    case state of
+        Solved _ ->
+            False
+
+        Uninitialised ->
+            False
+
+        Start ->
+            True
+
+        SplitIntoSubBoxes ->
+            True
+
+        ScoredBox _ ->
+            True
 
 
 needsAnimated : AnimatedPoint -> Bool
@@ -807,12 +874,27 @@ view model =
                         ( "unit", div [] [ button [ onClick StartSim ] [ text "start" ] ] )
 
                     _ ->
-                        ( "stepper"
-                        , div []
-                            [ button [ onClick StepSim ] [ text "step" ]
-                            , button [ onClick StartSim ] [ text "reset" ]
-                            ]
-                        )
+                        case model.control of
+                            FastForward ->
+                                ( "fastforwarding"
+                                , div []
+                                    [ button [ onClick <| SetControl Manual ] [ text "stop fast forward" ]
+                                    , button [ onClick <| SetControl Skip ] [ text "skip to end" ]
+                                    ]
+                                )
+
+                            Manual ->
+                                ( "stepper"
+                                , div []
+                                    [ button [ onClick StepSim ] [ text "step" ]
+                                    , button [ onClick <| SetControl FastForward ] [ text "fast forward" ]
+                                    , button [ onClick <| SetControl Skip ] [ text "skip to end" ]
+                                    , button [ onClick StartSim ] [ text "reset" ]
+                                    ]
+                                )
+
+                            Skip ->
+                                ( "skipping", div [] [ text "skipping..." ] )
                 ]
             ]
                 ++ (case model.state of
