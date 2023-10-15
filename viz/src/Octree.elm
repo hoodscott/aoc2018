@@ -11,7 +11,7 @@ import Color
 import Direction3d
 import Duration exposing (Duration)
 import Html exposing (..)
-import Html.Attributes exposing (checked, for, id, style, type_)
+import Html.Attributes exposing (checked, class, for, id, style, type_)
 import Html.Events exposing (onClick)
 import Html.Events.Extra.Wheel
 import Html.Keyed
@@ -101,17 +101,23 @@ type alias Model =
     , range : Float
     , candidates : PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
     , toBeScored : List (Block3d.Block3d Length.Meters Coords)
-    , subBoxes : List (Block3d.Block3d Length.Meters Coords)
+
+    -- simulation visuals (scene3d elements)
     , points : List AnimatedPoint
-    , box : Maybe (Block3d.Block3d Length.Meters Coords)
-    , showRhombiCube : Bool
-    , showRhombiDodec : Bool
-    , showTetrakis : Bool
+    , simSelectedBox : Maybe (Block3d.Block3d Length.Meters Coords)
+    , simSubBoxes : List (Block3d.Block3d Length.Meters Coords)
+    , userSelectedBox : Maybe (Block3d.Block3d Length.Meters Coords)
     , axes :
         { x : Scene3d.Entity Coords
         , y : Scene3d.Entity Coords
         , z : Scene3d.Entity Coords
         }
+
+    -- extra options toggles
+    , showRhombiCube : Bool
+    , showRhombiDodec : Bool
+    , showTetrakis : Bool
+    , showRealPriority : Bool
     }
 
 
@@ -135,12 +141,12 @@ initialModel =
     , range = 4
     , candidates = []
     , toBeScored = []
-    , subBoxes = []
+
+    -- simulation visuals (scene3d elements)
     , points = List.map createAnimatedEntity points3D
-    , box = Nothing
-    , showRhombiCube = False
-    , showRhombiDodec = False
-    , showTetrakis = False
+    , simSelectedBox = Nothing
+    , simSubBoxes = []
+    , userSelectedBox = Nothing
     , axes =
         let
             axisSize =
@@ -162,6 +168,12 @@ initialModel =
                     (Point3d.meters 0 0 -axisSize)
                     (Point3d.meters 0 0 axisSize)
         }
+
+    -- extra options toggles
+    , showRhombiCube = False
+    , showRhombiDodec = False
+    , showTetrakis = False
+    , showRealPriority = False
     }
 
 
@@ -194,10 +206,12 @@ type Msg
     | StepSim
     | NextD
     | SetControl SimulationControl
+    | HighlightBox (Maybe (Block3d.Block3d Length.Meters Coords))
       -- optional toggles
     | DrawRhombiCube Bool
     | DrawRhombiDocec Bool
     | DrawTetraHex Bool
+    | TogglePrecision Bool
       -- animation ticks
     | Tick Duration
 
@@ -311,6 +325,9 @@ update msg model =
         DrawRhombiCube b ->
             ( { model | showRhombiCube = b }, Cmd.none )
 
+        TogglePrecision b ->
+            ( { model | showRealPriority = b }, Cmd.none )
+
         SetControl c ->
             let
                 newModel =
@@ -321,6 +338,9 @@ update msg model =
 
             else
                 ( newModel, Cmd.none )
+
+        HighlightBox box ->
+            ( { model | userSelectedBox = box }, Cmd.none )
 
         ZoomChange event ->
             ( { model
@@ -358,7 +378,8 @@ update msg model =
             in
             ( { model
                 | state = Start
-                , box = Nothing
+                , simSelectedBox = Nothing
+                , userSelectedBox = Nothing
                 , points = initialPoints
                 , control = Manual
                 , candidates =
@@ -367,7 +388,7 @@ update msg model =
                         initialBox
                         []
                 , toBeScored = []
-                , subBoxes = []
+                , simSubBoxes = []
               }
             , Cmd.none
             )
@@ -671,8 +692,8 @@ scoreBox model boxtoScore tail =
                         (score + smallBoxBoost)
                         boxtoScore
                         model.candidates
-                , box = Just boxtoScore
-                , subBoxes = []
+                , simSelectedBox = Just boxtoScore
+                , simSubBoxes = []
             }
     in
     if model.control == Skip then
@@ -703,8 +724,8 @@ foundSolution model poppedBox newCandidates =
                         (Block3d.centerPoint poppedBox)
                 , candidates = newCandidates
                 , points = newPoints
-                , subBoxes = []
-                , box = Just poppedBox
+                , simSubBoxes = []
+                , simSelectedBox = Just poppedBox
             }
     in
     if model.control == Skip then
@@ -734,8 +755,8 @@ splitCandidate model poppedBox newCandidates =
                 , candidates = newCandidates
                 , toBeScored = List.reverse subBoxes
                 , points = pointsNoHighlight
-                , subBoxes = subBoxes
-                , box = Just poppedBox
+                , simSubBoxes = subBoxes
+                , simSelectedBox = Just poppedBox
             }
     in
     if model.control == Skip then
@@ -817,6 +838,33 @@ simulationInProgress state =
 
 view : Model -> Html Msg
 view model =
+    main_
+        [ style "box-sizing" "border-box"
+        , style "width" "100%"
+        , style "min-height" "100vh"
+        , style "padding" "1rem"
+        , style "display" "flex"
+        , style "gap" "1rem"
+        , style "flex-wrap" "wrap"
+        , style "align-items" "start"
+        , style "background" "dimgrey"
+        ]
+        [ viewSectionScene model
+        , viewSectionControls model
+        , viewSectionCandidatesQueue
+            model.showRealPriority
+            model.dimension
+            model.userSelectedBox
+            model.candidates
+        , viewSectionToScoreQueue
+            model.dimension
+            model.userSelectedBox
+            model.toBeScored
+        ]
+
+
+viewSectionScene : Model -> Html Msg
+viewSectionScene model =
     let
         viewpoint =
             Viewpoint3d.orbitZ
@@ -837,26 +885,34 @@ view model =
                 Dim3D ->
                     [ model.axes.x, model.axes.y, model.axes.z ]
 
-        createEdges box =
+        createEdges colour box =
             let
                 createEdge lineEdge =
                     Scene3d.lineSegment
-                        (Scene3d.Material.color Color.white)
+                        (Scene3d.Material.color colour)
                         lineEdge
             in
             Block3d.edges box
                 |> List.map createEdge
 
         boundingBox =
-            case model.box of
+            case model.simSelectedBox of
                 Just box ->
-                    createEdges box
+                    createEdges Color.white box
+
+                Nothing ->
+                    []
+
+        boundingBoxUser =
+            case model.userSelectedBox of
+                Just box ->
+                    createEdges Color.red box
 
                 Nothing ->
                     []
 
         showRhombiDodec =
-            case model.box of
+            case model.simSelectedBox of
                 Just box ->
                     if model.showRhombiDodec then
                         Block3d.vertices box
@@ -871,7 +927,7 @@ view model =
                     []
 
         showTetraHex =
-            case model.box of
+            case model.simSelectedBox of
                 Just box ->
                     if model.showTetrakis then
                         drawTetraHexEdges model.range box
@@ -883,7 +939,7 @@ view model =
                     []
 
         showRhombiCube =
-            case model.box of
+            case model.simSelectedBox of
                 Just box ->
                     if model.showRhombiCube then
                         drawRhombiCubeEdges model.range box
@@ -895,37 +951,96 @@ view model =
                     []
 
         showSubBox =
-            List.map createEdges model.subBoxes
+            List.map (createEdges Color.white) model.simSubBoxes
                 |> List.concat
+    in
+    section
+        [ Html.Events.onMouseDown MouseDown
+        , Html.Events.Extra.Wheel.onWheel ZoomChange
+        , style "border" "2px solid black"
+        , style "background" "slategrey"
+        , style "cursor" "move"
+        ]
+        [ Scene3d.unlit
+            { camera =
+                case model.projection of
+                    Orthographic ->
+                        Camera3d.orthographic
+                            { viewpoint = viewpoint
+                            , viewportHeight = Quantity.half model.distance
+                            }
 
+                    Perspective ->
+                        Camera3d.perspective
+                            { viewpoint = viewpoint
+                            , verticalFieldOfView = Angle.degrees 30
+                            }
+            , clipDepth = Length.meters 0.1
+            , dimensions = ( Pixels.int 800, Pixels.int 600 )
+            , background = Scene3d.transparentBackground
+            , entities =
+                axes
+                    ++ boundingBox
+                    ++ boundingBoxUser
+                    ++ List.map createSceneEntity model.points
+                    ++ showRhombiDodec
+                    ++ showTetraHex
+                    ++ showRhombiCube
+                    ++ showSubBox
+            }
+        ]
+
+
+viewSectionControls : Model -> Html Msg
+viewSectionControls model =
+    let
         showButtons =
             [ p [] [ text "simulation" ]
             , Html.Keyed.node "div"
                 []
                 [ case model.state of
                     Solved _ ->
-                        ( "solved", div [] [ button [ onClick StartSim ] [ text "start again" ] ] )
+                        ( "solved"
+                        , div []
+                            [ button [ onClick StartSim ] [ text "start again" ]
+                            ]
+                        )
 
                     Uninitialised ->
-                        ( "unit", div [] [ button [ onClick StartSim ] [ text "start" ] ] )
+                        ( "unit"
+                        , div []
+                            [ button [ onClick StartSim ] [ text "start" ] ]
+                        )
 
                     _ ->
                         case model.control of
                             FastForward ->
                                 ( "fastforwarding"
                                 , div []
-                                    [ button [ onClick <| SetControl Manual ] [ text "stop fast forward" ]
-                                    , button [ onClick <| SetControl Skip ] [ text "skip to end" ]
+                                    [ button
+                                        [ onClick <| SetControl Manual ]
+                                        [ text "stop fast forward" ]
+                                    , button
+                                        [ onClick <| SetControl Skip ]
+                                        [ text "skip to end" ]
                                     ]
                                 )
 
                             Manual ->
                                 ( "stepper"
                                 , div []
-                                    [ button [ onClick StepSim ] [ text "step" ]
-                                    , button [ onClick <| SetControl FastForward ] [ text "fast forward" ]
-                                    , button [ onClick <| SetControl Skip ] [ text "skip to end" ]
-                                    , button [ onClick StartSim ] [ text "reset" ]
+                                    [ button
+                                        [ onClick StepSim ]
+                                        [ text "step" ]
+                                    , button
+                                        [ onClick <| SetControl FastForward ]
+                                        [ text "fast forward" ]
+                                    , button
+                                        [ onClick <| SetControl Skip ]
+                                        [ text "skip to end" ]
+                                    , button
+                                        [ onClick StartSim ]
+                                        [ text "reset" ]
                                     ]
                                 )
 
@@ -935,7 +1050,11 @@ view model =
             ]
                 ++ (case model.state of
                         Solved answer ->
-                            [ p [] [ text <| "The answer is: " ++ Debug.toString answer ] ]
+                            [ p []
+                                [ text <| "The answer is: "
+                                , viewAnswer model.dimension answer
+                                ]
+                            ]
 
                         Uninitialised ->
                             []
@@ -947,144 +1066,173 @@ view model =
                             [ p [] [ text "Split into sub boxes" ] ]
 
                         ScoredBox score ->
-                            [ p [] [ text <| String.fromInt score ++ " points in range" ] ]
+                            [ p []
+                                [ text <|
+                                    String.fromInt score
+                                        ++ " points in range"
+                                ]
+                            ]
                    )
     in
-    main_
-        [ style "box-sizing" "border-box"
-        , style "width" "100%"
-        , style "min-height" "100vh"
-        , style "padding" "1rem"
-        , style "display" "flex"
-        , style "gap" "1rem"
-        , style "flex-wrap" "wrap"
-        , style "align-items" "start"
-        , style "background" "dimgrey"
+    section [ style "flex" "1" ] <|
+        [ p [] [ text "dimension" ]
+        , button [ onClick NextD ] [ text "next dim" ]
+        , p [] [ text "camera" ]
+        , button [ onClick ToTopDownCamera ] [ text "top down" ]
+        , button [ onClick ToInitialCamera ] [ text "fourtyfive" ]
+        , div [ style "display" "flex", style "flex-direction" "column" ]
+            [ label [ for "toggle-projection" ]
+                [ input
+                    [ type_ "checkbox"
+                    , onClick <| ToggleProjection
+                    , checked (model.projection == Orthographic)
+                    , id "toggle-projection"
+                    ]
+                    []
+                , text "toggle orthographic"
+                ]
+            ]
         ]
-        [ section
-            [ Html.Events.onMouseDown MouseDown
-            , Html.Events.Extra.Wheel.onWheel ZoomChange
-            , style "border" "2px solid black"
-            , style "background" "slategrey"
-            , style "cursor" "move"
-            ]
-            [ Scene3d.unlit
-                { camera =
-                    case model.projection of
-                        Orthographic ->
-                            Camera3d.orthographic
-                                { viewpoint = viewpoint
-                                , viewportHeight = Quantity.half model.distance
-                                }
-
-                        Perspective ->
-                            Camera3d.perspective
-                                { viewpoint = viewpoint
-                                , verticalFieldOfView = Angle.degrees 30
-                                }
-                , clipDepth = Length.meters 0.1
-                , dimensions = ( Pixels.int 800, Pixels.int 600 )
-                , background = Scene3d.transparentBackground
-                , entities =
-                    axes
-                        ++ boundingBox
-                        ++ List.map createSceneEntity model.points
-                        ++ showRhombiDodec
-                        ++ showTetraHex
-                        ++ showRhombiCube
-                        ++ showSubBox
-                }
-            ]
-        , section [ style "flex" "1" ] <|
-            [ p [] [ text "dimension" ]
-            , button [ onClick NextD ] [ text "next dim" ]
-            , p [] [ text "camera" ]
-            , button [ onClick ToTopDownCamera ] [ text "top down" ]
-            , button [ onClick ToInitialCamera ] [ text "fourtyfive" ]
-            , div [ style "display" "flex", style "flex-direction" "column" ]
-                [ label [ for "toggle-projection" ]
-                    [ input
-                        [ type_ "checkbox"
-                        , onClick <| ToggleProjection
-                        , checked (model.projection == Orthographic)
-                        , id "toggle-projection"
+            ++ showButtons
+            ++ (if model.simSelectedBox /= Nothing || model.userSelectedBox /= Nothing then
+                    [ p [] [ text "show extra shapes" ]
+                    , div
+                        [ style "display" "flex"
+                        , style "flex-direction" "column"
+                        , style "user-select" "none"
                         ]
-                        []
-                    , text "toggle orthographic"
+                        [ label
+                            [ style "color" "purple"
+                            , for
+                                "show-rhombicube"
+                            ]
+                            [ input
+                                [ type_ "checkbox"
+                                , onClick <|
+                                    DrawRhombiCube
+                                        (not model.showRhombiCube)
+                                , checked model.showRhombiCube
+                                , id "show-rhombicube"
+                                ]
+                                []
+                            , text "draw rhombicubeoctahedron"
+                            ]
+                        , label
+                            [ style "color" "orange"
+                            , for "show-rhombidec"
+                            ]
+                            [ input
+                                [ type_ "checkbox"
+                                , onClick <|
+                                    DrawRhombiDocec
+                                        (not model.showRhombiDodec)
+                                , checked model.showRhombiDodec
+                                , id "show-rhombidec"
+                                ]
+                                []
+                            , text "draw rhombic dodecahedron"
+                            ]
+                        , label
+                            [ style "color" "yellow"
+                            , for "show-tetrakis"
+                            ]
+                            [ input
+                                [ type_ "checkbox"
+                                , onClick <|
+                                    DrawTetraHex (not model.showTetrakis)
+                                , checked model.showTetrakis
+                                , id "show-tetrakis"
+                                ]
+                                []
+                            , text "draw tetrakis hexahahedron"
+                            ]
+                        ]
+                    , p [] [ text "misc options" ]
+                    , div []
+                        [ label
+                            [ for "toggle-precision" ]
+                            [ input
+                                [ type_ "checkbox"
+                                , onClick <|
+                                    TogglePrecision
+                                        (not model.showRealPriority)
+                                , checked model.showRealPriority
+                                , id "toggle-precision"
+                                ]
+                                []
+                            , text "toggle precision"
+                            ]
+                        ]
+                    ]
+                        ++ (if model.userSelectedBox /= Nothing then
+                                [ br [] []
+                                , button [ onClick <| HighlightBox Nothing ]
+                                    [ text "clear selectedbox"
+                                    ]
+                                ]
+
+                            else
+                                []
+                           )
+
+                else
+                    []
+               )
+
+
+viewSectionCandidatesQueue :
+    Bool
+    -> Dimension
+    -> Maybe (Block3d.Block3d Length.Meters Coords)
+    -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
+    -> Html Msg
+viewSectionCandidatesQueue showRealPriority dimension selectedBlock candidates =
+    section [ style "width" "800px" ]
+        [ table []
+            [ caption []
+                [ text <|
+                    "candidates: "
+                        ++ (String.fromInt <| List.length candidates)
+                ]
+            , thead []
+                [ tr []
+                    [ th [] [ text "Priority" ]
+                    , th [] [ text "Width" ]
+                    , th [] [ text "Centrepoint" ]
+                    , th [] [ text "Highlight" ]
+                    ]
+                ]
+            , tbody [] <|
+                List.map
+                    (showQueueItem showRealPriority dimension selectedBlock)
+                    candidates
+            ]
+        ]
+
+
+viewSectionToScoreQueue :
+    Dimension
+    -> Maybe (Block3d.Block3d Length.Meters Coords)
+    -> List (Block3d.Block3d Length.Meters Coords)
+    -> Html Msg
+viewSectionToScoreQueue dimension selectedBlock toBeScored =
+    section [ style "flex" "1" ]
+        [ table []
+            [ caption []
+                [ text <|
+                    "to score: "
+                        ++ (String.fromInt <| List.length toBeScored)
+                ]
+            , thead []
+                [ tr []
+                    [ th [] [ text "Width" ]
+                    , th [] [ text "Centrepoint" ]
+                    , th [] [ text "Highlight" ]
                     ]
                 ]
             ]
-                ++ showButtons
-                ++ (if model.box /= Nothing then
-                        [ p [] [ text "show extra shapes" ]
-                        , div
-                            [ style "display" "flex"
-                            , style "flex-direction" "column"
-                            , style "user-select" "none"
-                            ]
-                            [ label
-                                [ style "color" "purple"
-                                , for
-                                    "show-rhombicube"
-                                ]
-                                [ input
-                                    [ type_ "checkbox"
-                                    , onClick <|
-                                        DrawRhombiCube
-                                            (not model.showRhombiCube)
-                                    , checked model.showRhombiCube
-                                    , id "show-rhombicube"
-                                    ]
-                                    []
-                                , text "draw rhombicubeoctahedron"
-                                ]
-                            , label
-                                [ style "color" "orange"
-                                , for "show-rhombidec"
-                                ]
-                                [ input
-                                    [ type_ "checkbox"
-                                    , onClick <|
-                                        DrawRhombiDocec
-                                            (not model.showRhombiDodec)
-                                    , checked model.showRhombiDodec
-                                    , id "show-rhombidec"
-                                    ]
-                                    []
-                                , text "draw rhombic dodecahedron"
-                                ]
-                            , label
-                                [ style "color" "yellow"
-                                , for "show-tetrakis"
-                                ]
-                                [ input
-                                    [ type_ "checkbox"
-                                    , onClick <|
-                                        DrawTetraHex (not model.showTetrakis)
-                                    , checked model.showTetrakis
-                                    , id "show-tetrakis"
-                                    ]
-                                    []
-                                , text "draw tetrakis hexahahedron"
-                                ]
-                            ]
-                        ]
-
-                    else
-                        []
-                   )
-        , section [ style "width" "800px" ]
-            [ p [] [ text "candidates" ]
-            , p [] [ text <| String.fromInt <| List.length model.candidates ]
-            , ol [] <|
-                List.map showQueueItem model.candidates
-            ]
-        , section [ style "flex" "1" ]
-            [ p [] [ text "to check" ]
-            , p [] [ text <| String.fromInt <| List.length model.toBeScored ]
-            , ol [] <|
-                List.map showScoreItem model.toBeScored
-            ]
+        , tbody [] <|
+            List.map (showScoreItem dimension selectedBlock) toBeScored
         ]
 
 
@@ -1103,19 +1251,107 @@ createSceneEntity entity =
         entity.position
 
 
+viewAnswer : Dimension -> Point3d.Point3d Length.Meters Coords -> Html msg
+viewAnswer dimension point =
+    text <| "(" ++ pointToCoordString dimension point ++ ")"
+
+
 showQueueItem :
-    PriorityQueue.PQElement (Block3d.Block3d Length.Meters Coords) Float
-    -> Html msg
-showQueueItem pqElem =
-    li []
-        [ span [] [ text <| String.fromFloat (PriorityQueue.getPriority pqElem) ]
-        , span [] [ text <| Debug.toString (PriorityQueue.getElement pqElem) ]
-        ]
+    Bool
+    -> Dimension
+    -> Maybe (Block3d.Block3d Length.Meters Coords)
+    -> PriorityQueue.PQElement (Block3d.Block3d Length.Meters Coords) Float
+    -> Html Msg
+showQueueItem showRealPriority dimension selectedBlock pqElem =
+    let
+        priority =
+            if showRealPriority then
+                String.fromFloat (PriorityQueue.getPriority pqElem)
+
+            else
+                floor (PriorityQueue.getPriority pqElem)
+                    |> String.fromInt
+    in
+    tr [] <|
+        td [] [ text priority ]
+            :: (viewBlock dimension selectedBlock <|
+                    PriorityQueue.getElement pqElem
+               )
 
 
-showScoreItem : Block3d.Block3d Length.Meters Coords -> Html Msg
-showScoreItem boxToBeScored =
-    li [] [ span [] [ text <| Debug.toString boxToBeScored ] ]
+showScoreItem :
+    Dimension
+    -> Maybe (Block3d.Block3d Length.Meters Coords)
+    -> Block3d.Block3d Length.Meters Coords
+    -> Html Msg
+showScoreItem dimension selectedBlock boxToBeScored =
+    tr [] <| viewBlock dimension selectedBlock boxToBeScored
+
+
+viewBlock :
+    Dimension
+    -> Maybe (Block3d.Block3d Length.Meters Coords)
+    -> Block3d.Block3d Length.Meters Coords
+    -> List (Html Msg)
+viewBlock dimension selectedBlock block =
+    let
+        centreString =
+            pointToCoordString dimension <| Block3d.centerPoint block
+
+        widthString =
+            case Block3d.dimensions block of
+                ( _, w, _ ) ->
+                    w |> Length.inMeters |> String.fromFloat
+
+        isActive =
+            case selectedBlock of
+                Just selected ->
+                    selected == block
+
+                Nothing ->
+                    False
+
+        attrs =
+            if isActive then
+                [ onClick <| HighlightBox Nothing
+                , class "active"
+                , style "background" "red"
+                ]
+
+            else
+                [ onClick <| HighlightBox (Just block) ]
+    in
+    [ td [] [ text widthString ]
+    , td [] [ text <| "(" ++ centreString ++ ")" ]
+    , td [] [ button attrs [ text "select" ] ]
+    ]
+
+
+pointToCoordString :
+    Dimension
+    -> Point3d.Point3d Length.Meters Coords
+    -> String
+pointToCoordString dimension point =
+    let
+        flooredString float =
+            floor float |> String.fromInt
+    in
+    case Point3d.toTuple Length.inMeters point of
+        ( x, y, z ) ->
+            case dimension of
+                Dim1D ->
+                    flooredString x
+
+                Dim2D ->
+                    flooredString x ++ ", " ++ flooredString y
+
+                Dim3D ->
+                    flooredString x
+                        ++ ", "
+                        ++ flooredString y
+                        ++ ", "
+                        ++ flooredString z
+                        ++ ""
 
 
 {-| Rhombic Dodecahedron <https://en.wikipedia.org/wiki/Rhombic_dodecahedron>
