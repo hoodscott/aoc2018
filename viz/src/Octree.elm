@@ -40,6 +40,10 @@ main =
         }
 
 
+
+-- TYPES
+
+
 type Coords
     = Coords
 
@@ -111,6 +115,10 @@ type alias Model =
     }
 
 
+
+-- INIT
+
+
 initialModel : Model
 initialModel =
     { --camera
@@ -162,70 +170,13 @@ createAnimatedEntity point =
     { position = point, futurePositions = [], highlighted = False }
 
 
-ifInRangeofBox :
-    Float
-    -> Block3d.Block3d Length.Meters Coords
-    -> AnimatedPoint
-    -> Bool
-ifInRangeofBox range box entity =
-    if Block3d.contains entity.position box then
-        True
-
-    else
-        let
-            boundingBox =
-                Block3d.boundingBox box
-                    |> BoundingBox3d.extrema
-
-            diff min max test =
-                if Quantity.lessThan min test then
-                    Quantity.difference min test
-
-                else if Quantity.greaterThan max test then
-                    Quantity.difference test max
-
-                else
-                    Length.meters 0
-
-            xOff =
-                Point3d.xCoordinate entity.position
-                    |> diff boundingBox.minX boundingBox.maxX
-
-            yOff =
-                Point3d.yCoordinate entity.position
-                    |> diff boundingBox.minY boundingBox.maxY
-
-            zOff =
-                Point3d.zCoordinate entity.position
-                    |> diff boundingBox.minZ boundingBox.maxZ
-        in
-        Quantity.sum [ xOff, yOff, zOff ]
-            |> Quantity.lessThanOrEqualTo (Length.meters range)
-
-
-highlight : (AnimatedPoint -> Bool) -> AnimatedPoint -> AnimatedPoint
-highlight condition entity =
-    { entity | highlighted = condition entity }
-
-
-createSceneEntity : AnimatedPoint -> Scene3d.Entity Coords
-createSceneEntity entity =
-    let
-        colour =
-            if entity.highlighted then
-                Color.yellow
-
-            else
-                Color.white
-    in
-    Scene3d.point { radius = Pixels.float 2.5 }
-        (Scene3d.Material.color colour)
-        entity.position
-
-
 init : () -> ( Model, Cmd msg )
 init _ =
     ( initialModel, Cmd.none )
+
+
+
+-- UPDATE
 
 
 type Msg
@@ -365,11 +316,11 @@ update msg model =
                 newModel =
                     { model | control = c }
             in
-            if c /= Skip then
-                ( newModel, Cmd.none )
+            if c == Skip then
+                simulateStep newModel
 
             else
-                update StepSim newModel
+                ( newModel, Cmd.none )
 
         ZoomChange event ->
             ( { model
@@ -422,131 +373,53 @@ update msg model =
             )
 
         StepSim ->
-            -- step only works until we find the answer
-            case model.state of
-                Solved _ ->
-                    ( model, Cmd.none )
+            simulateStep model
 
-                _ ->
-                    -- first score any candidate boxes
-                    case model.toBeScored of
-                        boxtoScore :: tail ->
-                            let
-                                newPoints =
-                                    List.map
-                                        (highlight
-                                            (ifInRangeofBox model.range boxtoScore)
-                                        )
-                                        model.points
 
-                                countHighlighed point acc =
-                                    if point.highlighted then
-                                        acc + 1
+ifInRangeofBox :
+    Float
+    -> Block3d.Block3d Length.Meters Coords
+    -> AnimatedPoint
+    -> Bool
+ifInRangeofBox range box entity =
+    if Block3d.contains entity.position box then
+        True
 
-                                    else
-                                        acc
+    else
+        let
+            boundingBox =
+                Block3d.boundingBox box
+                    |> BoundingBox3d.extrema
 
-                                score =
-                                    List.foldl countHighlighed 0 newPoints
+            diff min max test =
+                if Quantity.lessThan min test then
+                    Quantity.difference min test
 
-                                smallBoxBoost =
-                                    case Block3d.dimensions boxtoScore of
-                                        ( _, w, _ ) ->
-                                            Length.inMeters w
-                                                |> (*) 0.001
-                                                |> (-) 1
+                else if Quantity.greaterThan max test then
+                    Quantity.difference test max
 
-                                newModel =
-                                    { model
-                                        | state = ScoredBox score
-                                        , points = newPoints
-                                        , toBeScored = tail
-                                        , candidates =
-                                            PriorityQueue.insert
-                                                (score + smallBoxBoost)
-                                                boxtoScore
-                                                model.candidates
-                                        , box = Just boxtoScore
-                                        , subBoxes = []
-                                    }
-                            in
-                            if model.control == Skip then
-                                update StepSim newModel
+                else
+                    Length.meters 0
 
-                            else
-                                ( newModel, Cmd.none )
+            xOff =
+                Point3d.xCoordinate entity.position
+                    |> diff boundingBox.minX boundingBox.maxX
 
-                        _ ->
-                            -- no boxes to be scored so try to pop a new
-                            -- candidate and split into subboxes
-                            case PriorityQueue.pop model.candidates of
-                                ( Just poppedBox, newCandidates ) ->
-                                    let
-                                        width =
-                                            case Block3d.dimensions poppedBox of
-                                                ( _, w, _ ) ->
-                                                    w
-                                    in
-                                    if
-                                        Quantity.equalWithin
-                                            (Length.meters 0.1)
-                                            (Length.meters 1)
-                                            width
-                                    then
-                                        let
-                                            newPoints =
-                                                List.map
-                                                    (highlight
-                                                        (ifInRangeofBox model.range poppedBox)
-                                                    )
-                                                    model.points
+            yOff =
+                Point3d.yCoordinate entity.position
+                    |> diff boundingBox.minY boundingBox.maxY
 
-                                            newModel =
-                                                { model
-                                                    | state =
-                                                        Solved
-                                                            (Block3d.centerPoint poppedBox)
-                                                    , candidates = newCandidates
-                                                    , points = newPoints
-                                                    , subBoxes = []
-                                                    , box = Just poppedBox
-                                                }
-                                        in
-                                        if model.control == Skip then
-                                            update StepSim newModel
+            zOff =
+                Point3d.zCoordinate entity.position
+                    |> diff boundingBox.minZ boundingBox.maxZ
+        in
+        Quantity.sum [ xOff, yOff, zOff ]
+            |> Quantity.lessThanOrEqualTo (Length.meters range)
 
-                                        else
-                                            ( newModel, Cmd.none )
 
-                                    else
-                                        let
-                                            subBoxes =
-                                                createSubBoxes
-                                                    model.dimension
-                                                    poppedBox
-
-                                            pointsNoHighlight =
-                                                List.map (highlight (\_ -> False))
-                                                    model.points
-
-                                            newModel =
-                                                { model
-                                                    | state = SplitIntoSubBoxes
-                                                    , candidates = newCandidates
-                                                    , toBeScored = List.reverse subBoxes
-                                                    , points = pointsNoHighlight
-                                                    , subBoxes = subBoxes
-                                                    , box = Just poppedBox
-                                                }
-                                        in
-                                        if model.control == Skip then
-                                            update StepSim newModel
-
-                                        else
-                                            ( newModel, Cmd.none )
-
-                                _ ->
-                                    ( model, Cmd.none )
+highlight : (AnimatedPoint -> Bool) -> AnimatedPoint -> AnimatedPoint
+highlight condition entity =
+    { entity | highlighted = condition entity }
 
 
 createBoxFromFloat :
@@ -717,11 +590,163 @@ newCoords entities newPoints =
     List.map2 setNewCoords entities newPoints
 
 
-decodeMouseMove : Decoder Msg
-decodeMouseMove =
-    Decode.map2 MouseMove
-        (Decode.field "movementX" (Decode.map Pixels.float Decode.float))
-        (Decode.field "movementY" (Decode.map Pixels.float Decode.float))
+simulateStep : Model -> ( Model, Cmd msg )
+simulateStep model =
+    -- step only works until we find the answer
+    case model.state of
+        Solved _ ->
+            ( model, Cmd.none )
+
+        _ ->
+            case model.toBeScored of
+                -- need to score all boxes before splitting any more
+                boxtoScore :: tail ->
+                    scoreBox model boxtoScore tail
+
+                _ ->
+                    -- no boxes to be scored so try to pop a new
+                    -- candidate, check to see if it is a solution or
+                    -- split into more subboxes
+                    case PriorityQueue.pop model.candidates of
+                        ( Just poppedBox, newCandidates ) ->
+                            let
+                                width =
+                                    case Block3d.dimensions poppedBox of
+                                        ( _, w, _ ) ->
+                                            w
+                            in
+                            if
+                                Quantity.equalWithin
+                                    (Length.meters 0.1)
+                                    (Length.meters 1)
+                                    width
+                            then
+                                foundSolution model poppedBox newCandidates
+
+                            else
+                                splitCandidate model poppedBox newCandidates
+
+                        _ ->
+                            -- Priority queue is empty
+                            -- (should have already found solution)
+                            ( model, Cmd.none )
+
+
+scoreBox :
+    Model
+    -> Block3d.Block3d Length.Meters Coords
+    -> List (Block3d.Block3d Length.Meters Coords)
+    -> ( Model, Cmd msg )
+scoreBox model boxtoScore tail =
+    let
+        newPoints =
+            List.map
+                (highlight (ifInRangeofBox model.range boxtoScore))
+                model.points
+
+        countHighlighed point acc =
+            if point.highlighted then
+                acc + 1
+
+            else
+                acc
+
+        score =
+            List.foldl countHighlighed 0 newPoints
+
+        smallBoxBoost =
+            case Block3d.dimensions boxtoScore of
+                ( _, w, _ ) ->
+                    Length.inMeters w
+                        |> (*) 0.001
+                        |> (-) 1
+
+        newModel =
+            { model
+                | state = ScoredBox score
+                , points = newPoints
+                , toBeScored = tail
+                , candidates =
+                    PriorityQueue.insert
+                        (score + smallBoxBoost)
+                        boxtoScore
+                        model.candidates
+                , box = Just boxtoScore
+                , subBoxes = []
+            }
+    in
+    if model.control == Skip then
+        simulateStep newModel
+
+    else
+        ( newModel, Cmd.none )
+
+
+foundSolution :
+    Model
+    -> Block3d.Block3d Length.Meters Coords
+    -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
+    -> ( Model, Cmd msg )
+foundSolution model poppedBox newCandidates =
+    let
+        newPoints =
+            List.map
+                (highlight
+                    (ifInRangeofBox model.range poppedBox)
+                )
+                model.points
+
+        newModel =
+            { model
+                | state =
+                    Solved
+                        (Block3d.centerPoint poppedBox)
+                , candidates = newCandidates
+                , points = newPoints
+                , subBoxes = []
+                , box = Just poppedBox
+            }
+    in
+    if model.control == Skip then
+        simulateStep newModel
+
+    else
+        ( newModel, Cmd.none )
+
+
+splitCandidate :
+    Model
+    -> Block3d.Block3d Length.Meters Coords
+    -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
+    -> ( Model, Cmd msg )
+splitCandidate model poppedBox newCandidates =
+    let
+        subBoxes =
+            createSubBoxes model.dimension poppedBox
+
+        pointsNoHighlight =
+            List.map (highlight (\_ -> False))
+                model.points
+
+        newModel =
+            { model
+                | state = SplitIntoSubBoxes
+                , candidates = newCandidates
+                , toBeScored = List.reverse subBoxes
+                , points = pointsNoHighlight
+                , subBoxes = subBoxes
+                , box = Just poppedBox
+            }
+    in
+    if model.control == Skip then
+        simulateStep newModel
+
+    else
+        ( newModel, Cmd.none )
+
+
+
+-- SUBSCRIPTIONS
 
 
 subscriptions : Model -> Sub Msg
@@ -755,6 +780,18 @@ subscriptions model =
                )
 
 
+decodeMouseMove : Decoder Msg
+decodeMouseMove =
+    Decode.map2 MouseMove
+        (Decode.field "movementX" (Decode.map Pixels.float Decode.float))
+        (Decode.field "movementY" (Decode.map Pixels.float Decode.float))
+
+
+needsAnimated : AnimatedPoint -> Bool
+needsAnimated entity =
+    List.length entity.futurePositions > 0
+
+
 simulationInProgress : SimulationState -> Bool
 simulationInProgress state =
     case state of
@@ -774,9 +811,8 @@ simulationInProgress state =
             True
 
 
-needsAnimated : AnimatedPoint -> Bool
-needsAnimated entity =
-    List.length entity.futurePositions > 0
+
+-- VIEW
 
 
 view : Model -> Html Msg
@@ -1052,6 +1088,21 @@ view model =
         ]
 
 
+createSceneEntity : AnimatedPoint -> Scene3d.Entity Coords
+createSceneEntity entity =
+    let
+        colour =
+            if entity.highlighted then
+                Color.yellow
+
+            else
+                Color.white
+    in
+    Scene3d.point { radius = Pixels.float 2.5 }
+        (Scene3d.Material.color colour)
+        entity.position
+
+
 showQueueItem :
     PriorityQueue.PQElement (Block3d.Block3d Length.Meters Coords) Float
     -> Html msg
@@ -1250,6 +1301,10 @@ drawRhombiCubeEdges range box =
     in
     List.map (buildEdges outerVertices) outerVertices
         |> List.concat
+
+
+
+-- DATA
 
 
 randomPoints : List ( Float, Float, Float )
