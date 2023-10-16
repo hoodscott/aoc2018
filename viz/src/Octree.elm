@@ -5,6 +5,7 @@ import Axis3d
 import Block3d
 import BoundingBox3d
 import Browser
+import Browser.Dom
 import Browser.Events
 import Camera3d
 import Color
@@ -26,6 +27,7 @@ import Scene3d
 import Scene3d.Material
 import Speed
 import String
+import Task
 import Vector3d
 import Viewpoint3d
 
@@ -93,6 +95,7 @@ type alias Model =
     , distance : Length.Length -- distance camera is from origin
     , orbiting : Bool -- are we moving the camera
     , projection : Projection -- camera projection
+    , cameraSize : Maybe (Quantity Int Pixels)
 
     -- problem simulation
     , state : SimulationState
@@ -133,6 +136,7 @@ initialModel =
     , distance = Length.meters 200
     , orbiting = False
     , projection = Orthographic
+    , cameraSize = Nothing
 
     -- problem simulation
     , state = Uninitialised
@@ -193,39 +197,41 @@ init _ =
 
 type Msg
     = -- camera control
-      ToTopDownCamera
-    | ToInitialCamera
-    | ToggleProjection
-    | ZoomChange Html.Events.Extra.Wheel.Event
+      SelectedTopDownCamera
+    | SelectedInitialCamera
+    | ToggledProjection
+    | ChangedZoom Html.Events.Extra.Wheel.Event
+    | ReturnedViewportSize (Result Browser.Dom.Error Browser.Dom.Element)
+    | RequestedViewportSize
       -- mouse events
-    | MouseDown
-    | MouseUp
-    | MouseMove (Quantity Float Pixels) (Quantity Float Pixels)
+    | DepressedMouse
+    | ReleasedMouse
+    | MovedMouse (Quantity Float Pixels) (Quantity Float Pixels)
       -- simulation controls
-    | StartSim
-    | StepSim
-    | NextD
+    | StartedSim
+    | SteppedSim
+    | IncreasedDimension
     | SetControl SimulationControl
-    | HighlightBox (Maybe (Block3d.Block3d Length.Meters Coords))
+    | SelectedBox (Maybe (Block3d.Block3d Length.Meters Coords))
       -- optional toggles
-    | DrawRhombiCube Bool
-    | DrawRhombiDocec Bool
-    | DrawTetraHex Bool
-    | TogglePrecision Bool
+    | ToggledRhombiCubeOption Bool
+    | ToggledRhombiDodecOption Bool
+    | ToggledTetraHexOption Bool
+    | ToggledPrecision Bool
       -- animation ticks
-    | Tick Duration
+    | TickedAnimation Duration
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        MouseDown ->
+        DepressedMouse ->
             ( { model | orbiting = True }, Cmd.none )
 
-        MouseUp ->
+        ReleasedMouse ->
             ( { model | orbiting = False }, Cmd.none )
 
-        MouseMove dx dy ->
+        MovedMouse dx dy ->
             if model.orbiting then
                 let
                     -- orbit the camera by 1 degree per pixel of drag
@@ -257,7 +263,7 @@ update msg model =
             else
                 ( model, Cmd.none )
 
-        NextD ->
+        IncreasedDimension ->
             let
                 newModel =
                     case model.dimension of
@@ -279,16 +285,16 @@ update msg model =
                                 , points = newCoords model.points points1D
                             }
             in
-            update StartSim newModel
+            update StartedSim newModel
 
-        Tick duration ->
+        TickedAnimation duration ->
             ( { model
                 | points = List.map (animateEntity duration) model.points
               }
             , Cmd.none
             )
 
-        ToTopDownCamera ->
+        SelectedTopDownCamera ->
             ( { model
                 | azimuth = Angle.degrees 270
                 , elevation = Angle.degrees 90
@@ -296,7 +302,7 @@ update msg model =
             , Cmd.none
             )
 
-        ToInitialCamera ->
+        SelectedInitialCamera ->
             ( { model
                 | azimuth = Angle.degrees 225
                 , elevation = Angle.degrees 30
@@ -304,7 +310,7 @@ update msg model =
             , Cmd.none
             )
 
-        ToggleProjection ->
+        ToggledProjection ->
             let
                 newProjection =
                     case model.projection of
@@ -316,16 +322,16 @@ update msg model =
             in
             ( { model | projection = newProjection }, Cmd.none )
 
-        DrawRhombiDocec b ->
+        ToggledRhombiDodecOption b ->
             ( { model | showRhombiDodec = b }, Cmd.none )
 
-        DrawTetraHex b ->
+        ToggledTetraHexOption b ->
             ( { model | showTetrakis = b }, Cmd.none )
 
-        DrawRhombiCube b ->
+        ToggledRhombiCubeOption b ->
             ( { model | showRhombiCube = b }, Cmd.none )
 
-        TogglePrecision b ->
+        ToggledPrecision b ->
             ( { model | showRealPriority = b }, Cmd.none )
 
         SetControl c ->
@@ -339,10 +345,10 @@ update msg model =
             else
                 ( newModel, Cmd.none )
 
-        HighlightBox box ->
+        SelectedBox box ->
             ( { model | userSelectedBox = box }, Cmd.none )
 
-        ZoomChange event ->
+        ChangedZoom event ->
             ( { model
                 | distance =
                     Quantity.plus
@@ -355,7 +361,43 @@ update msg model =
             , Cmd.none
             )
 
-        StartSim ->
+        RequestedViewportSize ->
+            ( model
+            , Browser.Dom.getElement "controls"
+                |> Task.attempt ReturnedViewportSize
+            )
+
+        ReturnedViewportSize res ->
+            case res of
+                Ok element ->
+                    let
+                        newWidth =
+                            4
+                                |> (/)
+                                    (if element.viewport.width < 950 then
+                                        -- small screens use the whole width
+                                        element.element.width
+
+                                     else
+                                        -- large screens use remaining width
+                                        -- with a bit extra removed for padding
+                                        element.viewport.width
+                                            - element.element.width
+                                            - 64
+                                    )
+                                |> ceiling
+                                |> Pixels.int
+                    in
+                    ( { model
+                        | cameraSize = Just newWidth
+                      }
+                    , Cmd.none
+                    )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        StartedSim ->
             let
                 initialBox =
                     createBoxFromFloat 128
@@ -393,7 +435,7 @@ update msg model =
             , Cmd.none
             )
 
-        StepSim ->
+        SteppedSim ->
             simulateStep model
 
 
@@ -790,7 +832,7 @@ subscriptions model =
     Sub.batch <|
         (if model.orbiting then
             [ Browser.Events.onMouseMove decodeMouseMove
-            , Browser.Events.onMouseUp (Decode.succeed MouseUp)
+            , Browser.Events.onMouseUp (Decode.succeed ReleasedMouse)
             ]
 
          else
@@ -798,7 +840,7 @@ subscriptions model =
         )
             ++ (if List.any needsAnimated model.points then
                     [ Browser.Events.onAnimationFrameDelta
-                        (Duration.milliseconds >> Tick)
+                        (Duration.milliseconds >> TickedAnimation)
                     ]
 
                 else
@@ -809,16 +851,17 @@ subscriptions model =
                         && model.control
                         == FastForward
                 then
-                    [ Browser.Events.onAnimationFrame (always StepSim) ]
+                    [ Browser.Events.onAnimationFrame (always SteppedSim) ]
 
                 else
                     []
                )
+            ++ [ Browser.Events.onResize (\_ _ -> RequestedViewportSize) ]
 
 
 decodeMouseMove : Decoder Msg
 decodeMouseMove =
-    Decode.map2 MouseMove
+    Decode.map2 MovedMouse
         (Decode.field "movementX" (Decode.map Pixels.float Decode.float))
         (Decode.field "movementY" (Decode.map Pixels.float Decode.float))
 
@@ -853,18 +896,22 @@ simulationInProgress state =
 
 view : Model -> Html Msg
 view model =
-    main_ []
-        [ viewSectionScene model
-        , viewSectionControls model
-        , viewSectionCandidatesQueue
-            model.showRealPriority
-            model.dimension
-            model.userSelectedBox
-            model.candidates
-        , viewSectionToScoreQueue
-            model.dimension
-            model.userSelectedBox
-            model.toBeScored
+    div []
+        [ header [] [ div [] [ text "head" ] ]
+        , main_ []
+            [ viewSectionScene model
+            , viewSectionControls model
+            , viewSectionCandidatesQueue
+                model.showRealPriority
+                model.dimension
+                model.userSelectedBox
+                model.candidates
+            , viewSectionToScoreQueue
+                model.dimension
+                model.userSelectedBox
+                model.toBeScored
+            ]
+        , footer [] [ div [] [ text "foot" ] ]
         ]
 
 
@@ -960,38 +1007,59 @@ viewSectionScene model =
                 |> List.concat
     in
     section
-        [ Html.Events.onMouseDown MouseDown
-        , Html.Events.Extra.Wheel.onWheel ZoomChange
-        , class "scene-window"
+        [ Html.Events.onMouseDown DepressedMouse
+        , Html.Events.Extra.Wheel.onWheel ChangedZoom
+        , id "scene-window"
         ]
-        [ Scene3d.unlit
-            { camera =
-                case model.projection of
-                    Orthographic ->
-                        Camera3d.orthographic
-                            { viewpoint = viewpoint
-                            , viewportHeight = Quantity.half model.distance
-                            }
+    <|
+        case model.cameraSize of
+            Just cameraSize ->
+                let
+                    cameraWidth =
+                        cameraSize
+                            |> Quantity.multiplyBy 4
+                            |> Quantity.clamp
+                                (Pixels.int 300)
+                                (Pixels.int 880)
 
-                    Perspective ->
-                        Camera3d.perspective
-                            { viewpoint = viewpoint
-                            , verticalFieldOfView = Angle.degrees 30
-                            }
-            , clipDepth = Length.meters 0.1
-            , dimensions = ( Pixels.int 800, Pixels.int 600 )
-            , background = Scene3d.transparentBackground
-            , entities =
-                axes
-                    ++ boundingBox
-                    ++ boundingBoxUser
-                    ++ List.map createSceneEntity model.points
-                    ++ showRhombiDodec
-                    ++ showTetraHex
-                    ++ showRhombiCube
-                    ++ showSubBox
-            }
-        ]
+                    cameraHeight =
+                        cameraSize
+                            |> Quantity.multiplyBy 3
+                            |> Quantity.clamp
+                                (Pixels.int 300)
+                                (Pixels.int 660)
+                in
+                [ Scene3d.unlit
+                    { camera =
+                        case model.projection of
+                            Orthographic ->
+                                Camera3d.orthographic
+                                    { viewpoint = viewpoint
+                                    , viewportHeight = Quantity.half model.distance
+                                    }
+
+                            Perspective ->
+                                Camera3d.perspective
+                                    { viewpoint = viewpoint
+                                    , verticalFieldOfView = Angle.degrees 30
+                                    }
+                    , clipDepth = Length.meters 0.1
+                    , dimensions = ( cameraWidth, cameraHeight )
+                    , background = Scene3d.transparentBackground
+                    , entities =
+                        axes
+                            ++ boundingBox
+                            ++ boundingBoxUser
+                            ++ List.map createSceneEntity model.points
+                            ++ showRhombiDodec
+                            ++ showTetraHex
+                            ++ showRhombiCube
+                            ++ showSubBox
+                    }
+                ]
+
+            Nothing ->
+                []
 
 
 viewSectionControls : Model -> Html Msg
@@ -1012,14 +1080,14 @@ viewSectionControls model =
                     Solved _ _ ->
                         ( "solved"
                         , div []
-                            [ button [ onClick StartSim ] [ text "start again" ]
+                            [ button [ onClick StartedSim ] [ text "start again" ]
                             ]
                         )
 
                     Uninitialised ->
                         ( "unit"
                         , div []
-                            [ button [ onClick StartSim ] [ text "start" ] ]
+                            [ button [ onClick StartedSim ] [ text "start" ] ]
                         )
 
                     _ ->
@@ -1040,7 +1108,7 @@ viewSectionControls model =
                                 ( "stepper"
                                 , div []
                                     [ button
-                                        [ onClick StepSim ]
+                                        [ onClick SteppedSim ]
                                         [ text "step" ]
                                     , button
                                         [ onClick <| SetControl FastForward ]
@@ -1049,7 +1117,7 @@ viewSectionControls model =
                                         [ onClick <| SetControl Skip ]
                                         [ text "skip to end" ]
                                     , button
-                                        [ onClick StartSim ]
+                                        [ onClick StartedSim ]
                                         [ text "reset" ]
                                     ]
                                 )
@@ -1096,17 +1164,18 @@ viewSectionControls model =
                             ]
                    )
     in
-    section [] <|
+    section [ id "controls" ] <|
         [ p [] [ text "dimension" ]
-        , button [ onClick NextD ] [ text "next dim" ]
+        , button [ onClick IncreasedDimension ] [ text "next dim" ]
+        , button [ onClick RequestedViewportSize ] [ text "recalcsize" ]
         , p [] [ text "camera" ]
-        , button [ onClick ToTopDownCamera ] [ text "top down" ]
-        , button [ onClick ToInitialCamera ] [ text "fourtyfive" ]
+        , button [ onClick SelectedTopDownCamera ] [ text "top down" ]
+        , button [ onClick SelectedInitialCamera ] [ text "fourtyfive" ]
         , div []
             [ label [ for "toggle-projection" ]
                 [ input
                     [ type_ "checkbox"
-                    , onClick <| ToggleProjection
+                    , onClick <| ToggledProjection
                     , checked (model.projection == Orthographic)
                     , id "toggle-projection"
                     ]
@@ -1124,7 +1193,7 @@ viewSectionControls model =
                             [ input
                                 [ type_ "checkbox"
                                 , onClick <|
-                                    DrawRhombiCube
+                                    ToggledRhombiCubeOption
                                         (not model.showRhombiCube)
                                 , checked model.showRhombiCube
                                 , id "show-rhombicube"
@@ -1137,7 +1206,7 @@ viewSectionControls model =
                             [ input
                                 [ type_ "checkbox"
                                 , onClick <|
-                                    DrawRhombiDocec
+                                    ToggledRhombiDodecOption
                                         (not model.showRhombiDodec)
                                 , checked model.showRhombiDodec
                                 , id "show-rhombidec"
@@ -1150,7 +1219,7 @@ viewSectionControls model =
                             [ input
                                 [ type_ "checkbox"
                                 , onClick <|
-                                    DrawTetraHex (not model.showTetrakis)
+                                    ToggledTetraHexOption (not model.showTetrakis)
                                 , checked model.showTetrakis
                                 , id "show-tetrakis"
                                 ]
@@ -1165,7 +1234,7 @@ viewSectionControls model =
                             [ input
                                 [ type_ "checkbox"
                                 , onClick <|
-                                    TogglePrecision
+                                    ToggledPrecision
                                         (not model.showRealPriority)
                                 , checked model.showRealPriority
                                 , id "toggle-precision"
@@ -1177,7 +1246,7 @@ viewSectionControls model =
                     ]
                         ++ (if model.userSelectedBox /= Nothing then
                                 [ br [] []
-                                , button [ onClick <| HighlightBox Nothing ]
+                                , button [ onClick <| SelectedBox Nothing ]
                                     [ text "clear selectedbox"
                                     ]
                                 ]
@@ -1258,7 +1327,7 @@ viewSectionCandidatesQueue :
     -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
     -> Html Msg
 viewSectionCandidatesQueue showRealPriority dimension selectedBlock candidates =
-    section []
+    section [ id "priority-table" ]
         [ table []
             [ caption []
                 [ text <|
@@ -1287,7 +1356,7 @@ viewSectionToScoreQueue :
     -> List (Block3d.Block3d Length.Meters Coords)
     -> Html Msg
 viewSectionToScoreQueue dimension selectedBlock toBeScored =
-    section []
+    section [ id "split-table" ]
         [ table []
             [ caption []
                 [ text <|
@@ -1388,10 +1457,10 @@ viewBlock dimension selectedBlock block =
 
         attrs =
             (if isActive then
-                [ onClick <| HighlightBox Nothing ]
+                [ onClick <| SelectedBox Nothing ]
 
              else
-                [ onClick <| HighlightBox (Just block) ]
+                [ onClick <| SelectedBox (Just block) ]
             )
                 ++ [ type_ "radio"
                    , name "highlight"
