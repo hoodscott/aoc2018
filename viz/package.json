@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "live-d": "elm-live src/Octree.elm -- --debug"
+    "live-d": "elm-live src/Octree.elm --dir=static/ -- --debug --output=static/elm.js"
   },
   "author": "",
   "license": "ISC",
