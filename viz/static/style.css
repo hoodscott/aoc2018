@@ -1,0 +1,49 @@
+/* #region what */
+main {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100vh;
+  padding: 1rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: start;
+  background: dimgrey;
+}
+
+.scene-window {
+  cursor: move;
+}
+
+/* #endregion */
+
+
+
+/* #region Code highlights */
+
+.code-container {
+  width: fit-content;
+}
+
+code:last-child {
+  padding: 0;
+}
+
+code {
+  display: block;
+  padding-bottom: 0.5rem
+}
+
+code>code {
+  margin-left: 1rem
+}
+
+code.active {
+  background: red;
+}
+
+code.skipped {
+  background: dimgrey;
+}
+
+/* #endregion */

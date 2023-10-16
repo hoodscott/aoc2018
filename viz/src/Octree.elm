@@ -11,7 +11,7 @@ import Color
 import Direction3d
 import Duration exposing (Duration)
 import Html exposing (..)
-import Html.Attributes exposing (checked, class, for, id, style, type_)
+import Html.Attributes exposing (checked, class, classList, for, id, name, type_)
 import Html.Events exposing (onClick)
 import Html.Events.Extra.Wheel
 import Html.Keyed
@@ -62,9 +62,9 @@ type Dimension
 type SimulationState
     = Uninitialised
     | Start
-    | SplitIntoSubBoxes
+    | SplitIntoSubBoxes Int
     | ScoredBox Int
-    | Solved (Point3d.Point3d Length.Meters Coords)
+    | Solved (Point3d.Point3d Length.Meters Coords) Int
 
 
 type SimulationControl
@@ -615,7 +615,7 @@ simulateStep : Model -> ( Model, Cmd msg )
 simulateStep model =
     -- step only works until we find the answer
     case model.state of
-        Solved _ ->
+        Solved _ _ ->
             ( model, Cmd.none )
 
         _ ->
@@ -665,15 +665,8 @@ scoreBox model boxtoScore tail =
                 (highlight (ifInRangeofBox model.range boxtoScore))
                 model.points
 
-        countHighlighed point acc =
-            if point.highlighted then
-                acc + 1
-
-            else
-                acc
-
         score =
-            List.foldl countHighlighed 0 newPoints
+            calcScore newPoints
 
         smallBoxBoost =
             case Block3d.dimensions boxtoScore of
@@ -703,6 +696,19 @@ scoreBox model boxtoScore tail =
         ( newModel, Cmd.none )
 
 
+calcScore : List AnimatedPoint -> number
+calcScore points =
+    let
+        countHighlighted point acc =
+            if point.highlighted then
+                acc + 1
+
+            else
+                acc
+    in
+    List.foldl countHighlighted 0 points
+
+
 foundSolution :
     Model
     -> Block3d.Block3d Length.Meters Coords
@@ -717,11 +723,15 @@ foundSolution model poppedBox newCandidates =
                 )
                 model.points
 
+        score =
+            calcScore newPoints
+
         newModel =
             { model
                 | state =
                     Solved
                         (Block3d.centerPoint poppedBox)
+                        score
                 , candidates = newCandidates
                 , points = newPoints
                 , simSubBoxes = []
@@ -749,9 +759,14 @@ splitCandidate model poppedBox newCandidates =
             List.map (highlight (\_ -> False))
                 model.points
 
+        widthInt =
+            case Block3d.dimensions poppedBox of
+                ( _, w, _ ) ->
+                    w |> Length.inMeters |> round
+
         newModel =
             { model
-                | state = SplitIntoSubBoxes
+                | state = SplitIntoSubBoxes widthInt
                 , candidates = newCandidates
                 , toBeScored = List.reverse subBoxes
                 , points = pointsNoHighlight
@@ -816,7 +831,7 @@ needsAnimated entity =
 simulationInProgress : SimulationState -> Bool
 simulationInProgress state =
     case state of
-        Solved _ ->
+        Solved _ _ ->
             False
 
         Uninitialised ->
@@ -825,7 +840,7 @@ simulationInProgress state =
         Start ->
             True
 
-        SplitIntoSubBoxes ->
+        SplitIntoSubBoxes _ ->
             True
 
         ScoredBox _ ->
@@ -838,17 +853,7 @@ simulationInProgress state =
 
 view : Model -> Html Msg
 view model =
-    main_
-        [ style "box-sizing" "border-box"
-        , style "width" "100%"
-        , style "min-height" "100vh"
-        , style "padding" "1rem"
-        , style "display" "flex"
-        , style "gap" "1rem"
-        , style "flex-wrap" "wrap"
-        , style "align-items" "start"
-        , style "background" "dimgrey"
-        ]
+    main_ []
         [ viewSectionScene model
         , viewSectionControls model
         , viewSectionCandidatesQueue
@@ -957,9 +962,7 @@ viewSectionScene model =
     section
         [ Html.Events.onMouseDown MouseDown
         , Html.Events.Extra.Wheel.onWheel ZoomChange
-        , style "border" "2px solid black"
-        , style "background" "slategrey"
-        , style "cursor" "move"
+        , class "scene-window"
         ]
         [ Scene3d.unlit
             { camera =
@@ -994,12 +997,19 @@ viewSectionScene model =
 viewSectionControls : Model -> Html Msg
 viewSectionControls model =
     let
+        pluralise singular plural number =
+            if number == 1 then
+                singular
+
+            else
+                plural
+
         showButtons =
             [ p [] [ text "simulation" ]
             , Html.Keyed.node "div"
                 []
                 [ case model.state of
-                    Solved _ ->
+                    Solved _ _ ->
                         ( "solved"
                         , div []
                             [ button [ onClick StartSim ] [ text "start again" ]
@@ -1048,11 +1058,14 @@ viewSectionControls model =
                                 ( "skipping", div [] [ text "skipping..." ] )
                 ]
             ]
+                ++ viewPseudoCode model
                 ++ (case model.state of
-                        Solved answer ->
+                        Solved answer score ->
                             [ p []
-                                [ text <| "The answer is: "
+                                [ text <|
+                                    "Box has a width of 1 so the answer is: "
                                 , viewAnswer model.dimension answer
+                                , text <| " with " ++ String.fromInt score ++ " " ++ pluralise "point" "points" score ++ " in range."
                                 ]
                             ]
 
@@ -1060,27 +1073,36 @@ viewSectionControls model =
                             []
 
                         Start ->
-                            [ p [] [ text "Step to begin" ] ]
+                            [ p [] [ text "Initial box added." ] ]
 
-                        SplitIntoSubBoxes ->
-                            [ p [] [ text "Split into sub boxes" ] ]
+                        SplitIntoSubBoxes width ->
+                            [ p []
+                                [ text <|
+                                    "Box has a width of "
+                                        ++ String.fromInt width
+                                        ++ ", so split into smaller boxes."
+                                ]
+                            ]
 
                         ScoredBox score ->
                             [ p []
                                 [ text <|
-                                    String.fromInt score
-                                        ++ " points in range"
+                                    "Box has "
+                                        ++ String.fromInt score
+                                        ++ " "
+                                        ++ pluralise "point" "points" score
+                                        ++ " in range.  Added to queue."
                                 ]
                             ]
                    )
     in
-    section [ style "flex" "1" ] <|
+    section [] <|
         [ p [] [ text "dimension" ]
         , button [ onClick NextD ] [ text "next dim" ]
         , p [] [ text "camera" ]
         , button [ onClick ToTopDownCamera ] [ text "top down" ]
         , button [ onClick ToInitialCamera ] [ text "fourtyfive" ]
-        , div [ style "display" "flex", style "flex-direction" "column" ]
+        , div []
             [ label [ for "toggle-projection" ]
                 [ input
                     [ type_ "checkbox"
@@ -1096,16 +1118,9 @@ viewSectionControls model =
             ++ showButtons
             ++ (if model.simSelectedBox /= Nothing || model.userSelectedBox /= Nothing then
                     [ p [] [ text "show extra shapes" ]
-                    , div
-                        [ style "display" "flex"
-                        , style "flex-direction" "column"
-                        , style "user-select" "none"
-                        ]
+                    , div []
                         [ label
-                            [ style "color" "purple"
-                            , for
-                                "show-rhombicube"
-                            ]
+                            [ for "show-rhombicube" ]
                             [ input
                                 [ type_ "checkbox"
                                 , onClick <|
@@ -1118,9 +1133,7 @@ viewSectionControls model =
                             , text "draw rhombicubeoctahedron"
                             ]
                         , label
-                            [ style "color" "orange"
-                            , for "show-rhombidec"
-                            ]
+                            [ for "show-rhombidec" ]
                             [ input
                                 [ type_ "checkbox"
                                 , onClick <|
@@ -1133,9 +1146,7 @@ viewSectionControls model =
                             , text "draw rhombic dodecahedron"
                             ]
                         , label
-                            [ style "color" "yellow"
-                            , for "show-tetrakis"
-                            ]
+                            [ for "show-tetrakis" ]
                             [ input
                                 [ type_ "checkbox"
                                 , onClick <|
@@ -1180,6 +1191,66 @@ viewSectionControls model =
                )
 
 
+viewPseudoCode : Model -> List (Html msg)
+viewPseudoCode model =
+    let
+        start =
+            model.state == Start
+
+        solved =
+            case model.state of
+                Solved _ _ ->
+                    True
+
+                _ ->
+                    False
+
+        split =
+            case model.state of
+                SplitIntoSubBoxes _ ->
+                    True
+
+                _ ->
+                    False
+
+        score =
+            case model.state of
+                ScoredBox _ ->
+                    True
+
+                _ ->
+                    False
+    in
+    [ div [ class "code-container" ]
+        [ code [ classList [ ( "active", start ) ] ]
+            [ text "add box containing all points to priority queue" ]
+        , code [ classList [ ( "active", solved || split ) ] ]
+            [ text "while the priority queue is not empty:"
+            , code []
+                [ text "take the first box from the queue" ]
+            , code [ classList [ ( "active", solved ), ( "skipped", split ) ] ]
+                [ text "if the box's width is 1:"
+                , code [] [ text "we have found a solution" ]
+                ]
+            , code [ classList [ ( "skipped", solved ) ] ]
+                [ text "otherwise:"
+                , code [ classList [ ( "active", split ) ] ]
+                    [ text "split the box into smaller boxes" ]
+                , code [ classList [ ( "active", score ), ( "skipped", split ) ] ]
+                    [ text "for each smaller box: "
+                    , code [] [ text "count how many points are in range" ]
+                    , code []
+                        [ text "add this box to the priority queue"
+                        , br [] []
+                        , text "with a priority of the calculated count"
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    ]
+
+
 viewSectionCandidatesQueue :
     Bool
     -> Dimension
@@ -1187,11 +1258,11 @@ viewSectionCandidatesQueue :
     -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
     -> Html Msg
 viewSectionCandidatesQueue showRealPriority dimension selectedBlock candidates =
-    section [ style "width" "800px" ]
+    section []
         [ table []
             [ caption []
                 [ text <|
-                    "candidates: "
+                    "Priority Queue - Total: "
                         ++ (String.fromInt <| List.length candidates)
                 ]
             , thead []
@@ -1216,11 +1287,11 @@ viewSectionToScoreQueue :
     -> List (Block3d.Block3d Length.Meters Coords)
     -> Html Msg
 viewSectionToScoreQueue dimension selectedBlock toBeScored =
-    section [ style "flex" "1" ]
+    section []
         [ table []
             [ caption []
                 [ text <|
-                    "to score: "
+                    "Boxes to be Scored - Total: "
                         ++ (String.fromInt <| List.length toBeScored)
                 ]
             , thead []
@@ -1230,9 +1301,9 @@ viewSectionToScoreQueue dimension selectedBlock toBeScored =
                     , th [] [ text "Highlight" ]
                     ]
                 ]
+            , tbody [] <|
+                List.map (showScoreItem dimension selectedBlock) toBeScored
             ]
-        , tbody [] <|
-            List.map (showScoreItem dimension selectedBlock) toBeScored
         ]
 
 
@@ -1311,19 +1382,27 @@ viewBlock dimension selectedBlock block =
                 Nothing ->
                     False
 
-        attrs =
-            if isActive then
-                [ onClick <| HighlightBox Nothing
-                , class "active"
-                , style "background" "red"
-                ]
+        inputID =
+            String.filter Char.isDigit (widthString ++ centreString)
+                |> (++) "highlight-"
 
-            else
+        attrs =
+            (if isActive then
+                [ onClick <| HighlightBox Nothing ]
+
+             else
                 [ onClick <| HighlightBox (Just block) ]
+            )
+                ++ [ type_ "radio"
+                   , name "highlight"
+                   , checked isActive
+                   , id inputID
+                   ]
     in
     [ td [] [ text widthString ]
     , td [] [ text <| "(" ++ centreString ++ ")" ]
-    , td [] [ button attrs [ text "select" ] ]
+    , td []
+        [ label [ for inputID ] [ input attrs [], text "select" ] ]
     ]
 
 
