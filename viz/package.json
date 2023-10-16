@@ -5,11 +5,13 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "live": "elm-live src/Octree.elm --dir=static/ -- --output=static/elm.js",
     "live-d": "elm-live src/Octree.elm --dir=static/ -- --debug --output=static/elm.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "elm-live": "^4.0.2"
+    "elm-live": "^4.0.2",
+    "uglify-js": "^2.4.11"
   }
 }
