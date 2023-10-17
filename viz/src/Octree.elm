@@ -13,7 +13,7 @@ import Color
 import Direction3d
 import Duration exposing (Duration)
 import Html exposing (..)
-import Html.Attributes exposing (checked, class, classList, for, id, name, type_)
+import Html.Attributes exposing (checked, class, classList, disabled, for, id, name, type_)
 import Html.Events exposing (onClick)
 import Html.Events.Extra.Wheel
 import Html.Keyed
@@ -101,6 +101,7 @@ type alias Model =
     , elevation : Angle.Angle -- angle of the camera up from the XY plane
     , distance : Length.Length -- distance camera is from origin
     , orbiting : Bool -- are we moving the camera
+    , cameraMoved : Bool -- has camera moved yet?
     , projection : Projection -- camera projection
     , cameraSize : Maybe (Quantity Int Pixels)
 
@@ -140,6 +141,7 @@ initialModel =
     , elevation = Angle.degrees 30
     , distance = Length.meters 200
     , orbiting = False
+    , cameraMoved = False
     , projection = Orthographic
     , cameraSize = Nothing
 
@@ -211,7 +213,7 @@ type Msg
     | ReleasedMouse
     | MovedMouse (Quantity Float Pixels) (Quantity Float Pixels)
       -- simulation controls
-    | NextState
+    | ChangedState State
     | StartedSim
     | SteppedSim
     | IncreasedDimension
@@ -260,6 +262,7 @@ update msg model =
                 ( { model
                     | azimuth = newAzimuth
                     , elevation = newElevation
+                    , cameraMoved = True
                   }
                 , Cmd.none
                 )
@@ -278,20 +281,41 @@ update msg model =
                             case dim of
                                 Dim1D ->
                                     { model
-                                        | state = Simulation Dim2D Uninitialised Manual
-                                        , points = newCoords model.points points2D
+                                        | state =
+                                            Simulation
+                                                Dim2D
+                                                Uninitialised
+                                                Manual
+                                        , points =
+                                            newCoords
+                                                model.points
+                                                points2D
                                     }
 
                                 Dim2D ->
                                     { model
-                                        | state = Simulation Dim3D Uninitialised Manual
-                                        , points = newCoords model.points points3D
+                                        | state =
+                                            Simulation
+                                                Dim3D
+                                                Uninitialised
+                                                Manual
+                                        , points =
+                                            newCoords
+                                                model.points
+                                                points3D
                                     }
 
                                 Dim3D ->
                                     { model
-                                        | state = Simulation Dim1D Uninitialised Manual
-                                        , points = newCoords model.points points1D
+                                        | state =
+                                            Simulation
+                                                Dim1D
+                                                Uninitialised
+                                                Manual
+                                        , points =
+                                            newCoords
+                                                model.points
+                                                points1D
                                     }
 
                         Wrapup ->
@@ -417,24 +441,16 @@ update msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
-        NextState ->
+        ChangedState state ->
             case model.state of
                 Intro ->
-                    ( { model | state = Simulation Dim1D Uninitialised Manual }, Cmd.none )
+                    ( { model | state = state }, Cmd.none )
 
                 Wrapup ->
-                    ( { model | state = Intro }, Cmd.none )
+                    ( { model | state = state }, Cmd.none )
 
-                Simulation dim _ _ ->
-                    case dim of
-                        Dim1D ->
-                            update IncreasedDimension model
-
-                        Dim2D ->
-                            update IncreasedDimension model
-
-                        Dim3D ->
-                            ( { model | state = Wrapup }, Cmd.none )
+                Simulation _ _ _ ->
+                    ( { model | state = state }, Cmd.none )
 
         StartedSim ->
             case model.state of
@@ -448,8 +464,9 @@ update msg model =
                     let
                         initialBox =
                             createBoxFromFloat 128
-                                -- dimensions we are searching for need to be offset
-                                -- by half unit to ensure solution is an integer
+                                -- dimensions we are interested in need to be
+                                -- offset by half unit to ensure solution is an
+                                -- integer
                                 (case dim of
                                     Dim1D ->
                                         ( -0.5, 0, 0 )
@@ -901,14 +918,15 @@ splitCandidate model dim control poppedBox newCandidates =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch <|
-        (if model.orbiting then
-            [ Browser.Events.onMouseMove decodeMouseMove
-            , Browser.Events.onMouseUp (Decode.succeed ReleasedMouse)
-            ]
+        Browser.Events.onResize (\_ _ -> RequestedViewportSize)
+            :: (if model.orbiting then
+                    [ Browser.Events.onMouseMove decodeMouseMove
+                    , Browser.Events.onMouseUp (Decode.succeed ReleasedMouse)
+                    ]
 
-         else
-            []
-        )
+                else
+                    []
+               )
             ++ (if List.any needsAnimated model.points then
                     [ Browser.Events.onAnimationFrameDelta
                         (Duration.milliseconds >> TickedAnimation)
@@ -923,7 +941,18 @@ subscriptions model =
                 else
                     []
                )
-            ++ [ Browser.Events.onResize (\_ _ -> RequestedViewportSize) ]
+            ++ (if
+                    (model.state /= Intro)
+                        && (model.state /= Wrapup)
+                        && (model.cameraSize == Nothing)
+                then
+                    [ Browser.Events.onAnimationFrame <|
+                        always RequestedViewportSize
+                    ]
+
+                else
+                    []
+               )
 
 
 decodeMouseMove : Decoder Msg
@@ -979,37 +1008,95 @@ isFastForwardingSim state =
 view : Model -> Html Msg
 view model =
     div []
-        [ header [] [ div [] [ text "head" ] ]
+        [ header [] [ viewHeader model.state ]
         , main_ []
             (case model.state of
                 Intro ->
-                    viewIntro
+                    viewSectionIntro model.state
 
                 Simulation dim simState control ->
                     [ viewSectionScene model dim
-                    , viewSectionControls model dim simState control
+                    , viewSectionControls model
+                        model.state
+                        dim
+                        simState
+                        control
                     , viewSectionCandidatesQueue
+                        (model.cameraSize /= Nothing)
                         model.showRealPriority
                         dim
                         model.userSelectedBox
                         model.candidates
                     , viewSectionToScoreQueue
+                        (model.cameraSize /= Nothing)
                         dim
                         model.userSelectedBox
                         model.toBeScored
                     ]
 
                 Wrapup ->
-                    viewWrapup
+                    viewSectionWrapup model.state
             )
         , footer [] [ div [] [ text "foot" ] ]
         ]
 
 
-viewIntro : List (Html Msg)
-viewIntro =
-    [ text "intro text"
-    , button [ onClick <| NextState ] [ text "next state" ]
+viewHeader : State -> Html Msg
+viewHeader state =
+    let
+        isCurrent compareState =
+            case state of
+                Intro ->
+                    compareState == state
+
+                Wrapup ->
+                    compareState == state
+
+                Simulation dim _ _ ->
+                    case compareState of
+                        Intro ->
+                            False
+
+                        Wrapup ->
+                            False
+
+                        Simulation sDim _ _ ->
+                            sDim == dim
+
+        buttonStep ( newState, buttonText ) =
+            button
+                [ onClick <| ChangedState <| newState
+                , classList [ ( "current", isCurrent newState ) ]
+                , disabled <| isCurrent newState
+                ]
+                [ text buttonText ]
+    in
+    div []
+        [ span [] [ text "head" ]
+        , div [ class "button-group" ] <|
+            List.map buttonStep
+                [ ( Intro, "1" )
+                , ( Simulation Dim1D Uninitialised Manual, "2" )
+                , ( Simulation Dim2D Uninitialised Manual, "3" )
+                , ( Simulation Dim3D Uninitialised Manual, "4" )
+                , ( Wrapup, "5" )
+                ]
+        ]
+
+
+viewSectionIntro : State -> List (Html Msg)
+viewSectionIntro state =
+    [ section [ id "intro" ]
+        [ p [] [ text "advent of code problem statement" ]
+        , p [] [ text "naive approach does not work" ]
+        , p [] [ text "seems imposs" ]
+        , p [] [ text "programming is algorithms + data structure" ]
+        , p []
+            [ text "data structure explain: stack -> queue -> priority queue" ]
+        , p [] [ text "simplify problem to 1 dimension to make it easier" ]
+        , button [ onClick <| ChangedState <| getNextState state ]
+            [ text "next state" ]
+        ]
     ]
 
 
@@ -1133,7 +1220,9 @@ viewSectionScene model dimension =
                             Orthographic ->
                                 Camera3d.orthographic
                                     { viewpoint = viewpoint
-                                    , viewportHeight = Quantity.half model.distance
+                                    , viewportHeight =
+                                        Quantity.half
+                                            model.distance
                                     }
 
                             Perspective ->
@@ -1154,6 +1243,29 @@ viewSectionScene model dimension =
                             ++ showRhombiCube
                             ++ showSubBox
                     }
+                , div [ class "camera-controls" ]
+                    (if model.cameraMoved then
+                        [ button [ onClick SelectedTopDownCamera ]
+                            [ text "top down" ]
+                        , button [ onClick SelectedInitialCamera ]
+                            [ text "fourtyfive" ]
+                        , div []
+                            [ label [ for "toggle-projection" ]
+                                [ input
+                                    [ type_ "checkbox"
+                                    , onClick <| ToggledProjection
+                                    , checked (model.projection == Orthographic)
+                                    , id "toggle-projection"
+                                    ]
+                                    []
+                                , text "toggle orthographic"
+                                ]
+                            ]
+                        ]
+
+                     else
+                        []
+                    )
                 ]
 
             Nothing ->
@@ -1162,11 +1274,12 @@ viewSectionScene model dimension =
 
 viewSectionControls :
     Model
+    -> State
     -> Dimension
     -> SimulationState
     -> SimulationControl
     -> Html Msg
-viewSectionControls model dim simState control =
+viewSectionControls model state dim simState control =
     let
         pluralise singular plural number =
             if number == 1 then
@@ -1176,15 +1289,20 @@ viewSectionControls model dim simState control =
                 plural
 
         showCode =
-            p [] [ text "simulation" ]
-                :: viewPseudoCode simState
+            viewSimStateExplain dim
+                ++ viewPseudoCode simState
                 ++ (case simState of
                         Solved answer score ->
                             [ p []
                                 [ text <|
                                     "Box has a width of 1 so the answer is: "
                                 , viewAnswer dim answer
-                                , text <| " with " ++ String.fromInt score ++ " " ++ pluralise "point" "points" score ++ " in range."
+                                , text <|
+                                    " with "
+                                        ++ String.fromInt score
+                                        ++ " "
+                                        ++ pluralise "point" "points" score
+                                        ++ " in range."
                                 ]
                             ]
 
@@ -1222,7 +1340,9 @@ viewSectionControls model dim simState control =
                     Solved _ _ ->
                         ( "solved"
                         , div []
-                            [ button [ onClick StartedSim ] [ text "start again" ]
+                            [ button
+                                [ onClick StartedSim ]
+                                [ text "start again" ]
                             ]
                         )
 
@@ -1268,32 +1388,31 @@ viewSectionControls model dim simState control =
                                 ( "skipping", div [] [ text "skipping..." ] )
                 ]
             ]
+
+        isSolved ss =
+            case ss of
+                Solved _ _ ->
+                    True
+
+                _ ->
+                    False
     in
     section [ id "controls" ] <|
-        [ text "state control"
-        , button [ onClick <| NextState ] [ text "next state" ]
-        , p [] [ text "dimension" ]
-        , button [ onClick IncreasedDimension ] [ text "next dim" ]
-        , button [ onClick RequestedViewportSize ] [ text "recalcsize" ]
-        , p [] [ text "camera" ]
-        , button [ onClick SelectedTopDownCamera ] [ text "top down" ]
-        , button [ onClick SelectedInitialCamera ] [ text "fourtyfive" ]
-        , div []
-            [ label [ for "toggle-projection" ]
-                [ input
-                    [ type_ "checkbox"
-                    , onClick <| ToggledProjection
-                    , checked (model.projection == Orthographic)
-                    , id "toggle-projection"
-                    ]
-                    []
-                , text "toggle orthographic"
-                ]
-            ]
-        ]
-            ++ showCode
+        showCode
             ++ showButtons
-            ++ (if model.simSelectedBox /= Nothing || model.userSelectedBox /= Nothing then
+            ++ (if isSolved simState then
+                    [ p [] [ text "state control" ]
+                    , button [ onClick <| ChangedState <| getNextState state ]
+                        [ text "next state" ]
+                    ]
+
+                else
+                    []
+               )
+            ++ (if
+                    (model.simSelectedBox /= Nothing)
+                        || (model.userSelectedBox /= Nothing)
+                then
                     [ p [] [ text "show extra shapes" ]
                     , div []
                         [ label
@@ -1327,7 +1446,8 @@ viewSectionControls model dim simState control =
                             [ input
                                 [ type_ "checkbox"
                                 , onClick <|
-                                    ToggledTetraHexOption (not model.showTetrakis)
+                                    ToggledTetraHexOption
+                                        (not model.showTetrakis)
                                 , checked model.showTetrakis
                                 , id "show-tetrakis"
                                 ]
@@ -1366,6 +1486,34 @@ viewSectionControls model dim simState control =
                 else
                     []
                )
+
+
+viewSimStateExplain : Dimension -> List (Html msg)
+viewSimStateExplain dimension =
+    case dimension of
+        Dim1D ->
+            [ p [] [ text "problem is now points on a single line" ]
+            , p [] [ text "now seems easier as it looks like we could do binary search" ] -- todo: is this correct term?
+            , p [] [ text "box around all points, split space each time" ]
+            , p [] [ text "point counts as in range if its in the box or if x value +/- range is in box" ] -- todo: explain in terms of offset to make next steps easier to explain
+            , p [] [ text "to see how this works we can simulate the steps below" ]
+            ]
+
+        Dim2D ->
+            [ p [] [ text "problem is now points on a plane" ]
+            , p [] [ text "instead of splitting into 2, we split into 4 boxes - quadtree" ] -- todo: is this correct term?
+            , p [] [ text "algorithm can stay the same just need new way to calculate in range" ]
+            , p [] [ text "point counts as in range if (xoffset+yoffset <= range)" ]
+            , p [] [ text "to see how this works we can simulate the steps below" ]
+            ]
+
+        Dim3D ->
+            [ p [] [ text "now we are back to original problem" ]
+            , p [] [ text "instead of splitting into 4, we split into 8 boxes - octree" ] -- todo: is this correct term?
+            , p [] [ text "again, algorithm stays the same" ]
+            , p [] [ text "point counts as in range if (xoffset+yoffset+zoffset <= range)" ]
+            , p [] [ text "to see how this works we can simulate the steps below" ]
+            ]
 
 
 viewPseudoCode : SimulationState -> List (Html msg)
@@ -1413,7 +1561,8 @@ viewPseudoCode simState =
                 [ text "otherwise:"
                 , code [ classList [ ( "active", split ) ] ]
                     [ text "split the box into smaller boxes" ]
-                , code [ classList [ ( "active", score ), ( "skipped", split ) ] ]
+                , code
+                    [ classList [ ( "active", score ), ( "skipped", split ) ] ]
                     [ text "for each smaller box: "
                     , code [] [ text "count how many points are in range" ]
                     , code []
@@ -1430,65 +1579,113 @@ viewPseudoCode simState =
 
 viewSectionCandidatesQueue :
     Bool
+    -> Bool
     -> Dimension
     -> Maybe (Block3d.Block3d Length.Meters Coords)
     -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
     -> Html Msg
-viewSectionCandidatesQueue showRealPriority dimension selectedBlock candidates =
-    section [ id "priority-table" ]
-        [ table []
-            [ caption []
-                [ text <|
-                    "Priority Queue - Total: "
-                        ++ (String.fromInt <| List.length candidates)
-                ]
-            , thead []
-                [ tr []
-                    [ th [] [ text "Priority" ]
-                    , th [] [ text "Width" ]
-                    , th [] [ text "Centrepoint" ]
-                    , th [] [ text "Highlight" ]
+viewSectionCandidatesQueue show showRealPriority dimension selectedBlock candidates =
+    if show then
+        section [ id "priority-table" ]
+            [ table []
+                [ caption []
+                    [ text <|
+                        "Priority Queue - Total: "
+                            ++ (String.fromInt <| List.length candidates)
                     ]
+                , thead []
+                    [ tr []
+                        [ th [] [ text "Priority" ]
+                        , th [] [ text "Width" ]
+                        , th [] [ text "Centrepoint" ]
+                        , th [] [ text "Highlight" ]
+                        ]
+                    ]
+                , tbody [] <|
+                    List.map
+                        (showQueueItem showRealPriority dimension selectedBlock)
+                        candidates
                 ]
-            , tbody [] <|
-                List.map
-                    (showQueueItem showRealPriority dimension selectedBlock)
-                    candidates
             ]
-        ]
+
+    else
+        text ""
 
 
 viewSectionToScoreQueue :
-    Dimension
+    Bool
+    -> Dimension
     -> Maybe (Block3d.Block3d Length.Meters Coords)
     -> List (Block3d.Block3d Length.Meters Coords)
     -> Html Msg
-viewSectionToScoreQueue dimension selectedBlock toBeScored =
-    section [ id "split-table" ]
-        [ table []
-            [ caption []
-                [ text <|
-                    "Boxes to be Scored - Total: "
-                        ++ (String.fromInt <| List.length toBeScored)
-                ]
-            , thead []
-                [ tr []
-                    [ th [] [ text "Width" ]
-                    , th [] [ text "Centrepoint" ]
-                    , th [] [ text "Highlight" ]
+viewSectionToScoreQueue show dimension selectedBlock toBeScored =
+    if show then
+        section [ id "split-table" ]
+            [ table []
+                [ caption []
+                    [ text <|
+                        "Boxes to be Scored - Total: "
+                            ++ (String.fromInt <| List.length toBeScored)
                     ]
+                , thead []
+                    [ tr []
+                        [ th [] [ text "Width" ]
+                        , th [] [ text "Centrepoint" ]
+                        , th [] [ text "Highlight" ]
+                        ]
+                    ]
+                , tbody [] <|
+                    List.map (showScoreItem dimension selectedBlock) toBeScored
                 ]
-            , tbody [] <|
-                List.map (showScoreItem dimension selectedBlock) toBeScored
+            ]
+
+    else
+        text ""
+
+
+viewSectionWrapup : State -> List (Html Msg)
+viewSectionWrapup state =
+    [ section [ id "wrapup" ]
+        [ p [] [ text "congrats - now you know octrees" ]
+        , p []
+            [ text """can be used in more dimensions (but hard to visualise).
+pattern is (2^num dimension - creating twice as many subboxes each dimension)
+"""
+            ]
+        , p [] [ text "applications?" ] -- todo find good examples (boids?)
+        , p []
+            [ text """trick to make algo more efficient is to alter priority.
+for example we were actually using (points in range - (1 + 0.001 * width))
+to prioritse smaller boxes with the same number of points in range
+"""
+            ]
+        , p [] [ text "to see this and to play with few extra toggles:" ]
+        , button [ onClick <| ChangedState <| getNextState state ]
+            [ text "back to start"
             ]
         ]
-
-
-viewWrapup : List (Html Msg)
-viewWrapup =
-    [ text "wrapup text"
-    , button [ onClick <| NextState ] [ text "back to start" ]
     ]
+
+
+getNextState : State -> State
+getNextState state =
+    case state of
+        Intro ->
+            Simulation Dim1D Uninitialised Manual
+
+        Simulation dim _ _ ->
+            case dim of
+                Dim1D ->
+                    Simulation Dim2D Uninitialised Manual
+
+                Dim2D ->
+                    Simulation Dim3D Uninitialised Manual
+
+                Dim3D ->
+                    Wrapup
+
+        Wrapup ->
+            Intro
 
 
 createSceneEntity : AnimatedPoint -> Scene3d.Entity Coords
