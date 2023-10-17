@@ -19,12 +19,11 @@ body {
   margin: 0;
 }
 
-#scene-window {
-  cursor: move;
-  border: 1px solid var(--background-colour-alt);
-}
+
 
 #scene-window>div {
+  cursor: move;
+  border: 1px solid var(--background-colour-alt);
   min-width: 100%;
   display: flex;
   justify-content: center;
@@ -93,8 +92,8 @@ main>#split-table {
       "scene controls"
       "queue controls"
       "split controls";
-    grid-template-columns: minmax(0, max-content) minmax(50%, 1fr);
-    grid-template-rows: auto auto auto;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: auto auto 1fr;
   }
 }
 
@@ -158,6 +157,8 @@ tbody>tr:nth-child(odd) {
 
 .code-container {
   width: fit-content;
+  border: 1px solid var(--background-colour-alt);
+  padding: 0.5rem;
 }
 
 code:last-child {

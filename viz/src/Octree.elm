@@ -8,6 +8,7 @@ import Browser
 import Browser.Dom
 import Browser.Events
 import Camera3d
+import Char
 import Color
 import Direction3d
 import Duration exposing (Duration)
@@ -61,6 +62,12 @@ type Dimension
     | Dim3D
 
 
+type State
+    = Intro
+    | Simulation Dimension SimulationState SimulationControl
+    | Wrapup
+
+
 type SimulationState
     = Uninitialised
     | Start
@@ -98,9 +105,7 @@ type alias Model =
     , cameraSize : Maybe (Quantity Int Pixels)
 
     -- problem simulation
-    , state : SimulationState
-    , control : SimulationControl
-    , dimension : Dimension -- how many dimensions are we showing
+    , state : State
     , range : Float
     , candidates : PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
     , toBeScored : List (Block3d.Block3d Length.Meters Coords)
@@ -139,9 +144,7 @@ initialModel =
     , cameraSize = Nothing
 
     -- problem simulation
-    , state = Uninitialised
-    , control = Manual
-    , dimension = Dim3D
+    , state = Intro
     , range = 4
     , candidates = []
     , toBeScored = []
@@ -208,6 +211,7 @@ type Msg
     | ReleasedMouse
     | MovedMouse (Quantity Float Pixels) (Quantity Float Pixels)
       -- simulation controls
+    | NextState
     | StartedSim
     | SteppedSim
     | IncreasedDimension
@@ -266,24 +270,32 @@ update msg model =
         IncreasedDimension ->
             let
                 newModel =
-                    case model.dimension of
-                        Dim1D ->
-                            { model
-                                | dimension = Dim2D
-                                , points = newCoords model.points points2D
-                            }
+                    case model.state of
+                        Intro ->
+                            model
 
-                        Dim2D ->
-                            { model
-                                | dimension = Dim3D
-                                , points = newCoords model.points points3D
-                            }
+                        Simulation dim _ _ ->
+                            case dim of
+                                Dim1D ->
+                                    { model
+                                        | state = Simulation Dim2D Uninitialised Manual
+                                        , points = newCoords model.points points2D
+                                    }
 
-                        Dim3D ->
-                            { model
-                                | dimension = Dim1D
-                                , points = newCoords model.points points1D
-                            }
+                                Dim2D ->
+                                    { model
+                                        | state = Simulation Dim3D Uninitialised Manual
+                                        , points = newCoords model.points points3D
+                                    }
+
+                                Dim3D ->
+                                    { model
+                                        | state = Simulation Dim1D Uninitialised Manual
+                                        , points = newCoords model.points points1D
+                                    }
+
+                        Wrapup ->
+                            model
             in
             update StartedSim newModel
 
@@ -337,7 +349,15 @@ update msg model =
         SetControl c ->
             let
                 newModel =
-                    { model | control = c }
+                    case model.state of
+                        Intro ->
+                            model
+
+                        Wrapup ->
+                            model
+
+                        Simulation dim simState _ ->
+                            { model | state = Simulation dim simState c }
             in
             if c == Skip then
                 simulateStep newModel
@@ -374,12 +394,12 @@ update msg model =
                         newWidth =
                             4
                                 |> (/)
-                                    (if element.viewport.width < 950 then
-                                        -- small screens use the whole width
+                                    (if element.viewport.width < 1200 then
+                                        -- "small" screens use the whole width
                                         element.element.width
 
                                      else
-                                        -- large screens use remaining width
+                                        -- "large" screens use remaining width
                                         -- with a bit extra removed for padding
                                         element.viewport.width
                                             - element.element.width
@@ -397,43 +417,69 @@ update msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
+        NextState ->
+            case model.state of
+                Intro ->
+                    ( { model | state = Simulation Dim1D Uninitialised Manual }, Cmd.none )
+
+                Wrapup ->
+                    ( { model | state = Intro }, Cmd.none )
+
+                Simulation dim _ _ ->
+                    case dim of
+                        Dim1D ->
+                            update IncreasedDimension model
+
+                        Dim2D ->
+                            update IncreasedDimension model
+
+                        Dim3D ->
+                            ( { model | state = Wrapup }, Cmd.none )
+
         StartedSim ->
-            let
-                initialBox =
-                    createBoxFromFloat 128
-                        -- dimensions we are searching for need to be offset
-                        -- by half unit to ensure solution is an integer
-                        (case model.dimension of
-                            Dim1D ->
-                                ( -0.5, 0, 0 )
+            case model.state of
+                Intro ->
+                    ( model, Cmd.none )
 
-                            Dim2D ->
-                                ( -0.5, -0.5, 0 )
+                Wrapup ->
+                    ( model, Cmd.none )
 
-                            Dim3D ->
-                                ( -0.5, -0.5, -0.5 )
-                        )
+                Simulation dim _ _ ->
+                    let
+                        initialBox =
+                            createBoxFromFloat 128
+                                -- dimensions we are searching for need to be offset
+                                -- by half unit to ensure solution is an integer
+                                (case dim of
+                                    Dim1D ->
+                                        ( -0.5, 0, 0 )
 
-                initialPoints =
-                    List.map (highlight (\_ -> False))
-                        model.points
-            in
-            ( { model
-                | state = Start
-                , simSelectedBox = Nothing
-                , userSelectedBox = Nothing
-                , points = initialPoints
-                , control = Manual
-                , candidates =
-                    PriorityQueue.insert
-                        (toFloat <| List.length model.points)
-                        initialBox
-                        []
-                , toBeScored = []
-                , simSubBoxes = []
-              }
-            , Cmd.none
-            )
+                                    Dim2D ->
+                                        ( -0.5, -0.5, 0 )
+
+                                    Dim3D ->
+                                        ( -0.5, -0.5, -0.5 )
+                                )
+
+                        initialPoints =
+                            List.map (highlight (\_ -> False))
+                                model.points
+                    in
+                    ( { model
+                        | state = Simulation dim Start Manual
+                        , simSelectedBox = Nothing
+                        , userSelectedBox = Nothing
+                        , points = initialPoints
+                        , candidates =
+                            PriorityQueue.insert
+                                (toFloat <| List.length model.points)
+                                initialBox
+                                []
+                        , toBeScored = []
+                        , simSubBoxes = []
+                      }
+                    , Cmd.none
+                    )
 
         SteppedSim ->
             simulateStep model
@@ -657,50 +703,68 @@ simulateStep : Model -> ( Model, Cmd msg )
 simulateStep model =
     -- step only works until we find the answer
     case model.state of
-        Solved _ _ ->
+        Intro ->
             ( model, Cmd.none )
 
-        _ ->
-            case model.toBeScored of
-                -- need to score all boxes before splitting any more
-                boxtoScore :: tail ->
-                    scoreBox model boxtoScore tail
+        Wrapup ->
+            ( model, Cmd.none )
+
+        Simulation dim simState control ->
+            case simState of
+                Solved _ _ ->
+                    ( model, Cmd.none )
 
                 _ ->
-                    -- no boxes to be scored so try to pop a new
-                    -- candidate, check to see if it is a solution or
-                    -- split into more subboxes
-                    case PriorityQueue.pop model.candidates of
-                        ( Just poppedBox, newCandidates ) ->
-                            let
-                                width =
-                                    case Block3d.dimensions poppedBox of
-                                        ( _, w, _ ) ->
-                                            w
-                            in
-                            if
-                                Quantity.equalWithin
-                                    (Length.meters 0.1)
-                                    (Length.meters 1)
-                                    width
-                            then
-                                foundSolution model poppedBox newCandidates
-
-                            else
-                                splitCandidate model poppedBox newCandidates
+                    case model.toBeScored of
+                        -- need to score all boxes before splitting any more
+                        boxtoScore :: tail ->
+                            scoreBox model dim control boxtoScore tail
 
                         _ ->
-                            -- Priority queue is empty
-                            -- (should have already found solution)
-                            ( model, Cmd.none )
+                            -- no boxes to be scored so try to pop a new
+                            -- candidate, check to see if it is a solution or
+                            -- split into more subboxes
+                            case PriorityQueue.pop model.candidates of
+                                ( Just poppedBox, newCandidates ) ->
+                                    let
+                                        width =
+                                            case Block3d.dimensions poppedBox of
+                                                ( _, w, _ ) ->
+                                                    w
+                                    in
+                                    if
+                                        Quantity.equalWithin
+                                            (Length.meters 0.1)
+                                            (Length.meters 1)
+                                            width
+                                    then
+                                        foundSolution model
+                                            dim
+                                            control
+                                            poppedBox
+                                            newCandidates
+
+                                    else
+                                        splitCandidate model
+                                            dim
+                                            control
+                                            poppedBox
+                                            newCandidates
+
+                                _ ->
+                                    -- Priority queue is empty
+                                    -- (should have already found solution)
+                                    ( model, Cmd.none )
 
 
 scoreBox :
     Model
+    -> Dimension
+    -> SimulationControl
     -> Block3d.Block3d Length.Meters Coords
     -> List (Block3d.Block3d Length.Meters Coords)
     -> ( Model, Cmd msg )
-scoreBox model boxtoScore tail =
+scoreBox model dim control boxtoScore tail =
     let
         newPoints =
             List.map
@@ -719,7 +783,7 @@ scoreBox model boxtoScore tail =
 
         newModel =
             { model
-                | state = ScoredBox score
+                | state = Simulation dim (ScoredBox score) control
                 , points = newPoints
                 , toBeScored = tail
                 , candidates =
@@ -731,7 +795,7 @@ scoreBox model boxtoScore tail =
                 , simSubBoxes = []
             }
     in
-    if model.control == Skip then
+    if control == Skip then
         simulateStep newModel
 
     else
@@ -753,10 +817,12 @@ calcScore points =
 
 foundSolution :
     Model
+    -> Dimension
+    -> SimulationControl
     -> Block3d.Block3d Length.Meters Coords
     -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
     -> ( Model, Cmd msg )
-foundSolution model poppedBox newCandidates =
+foundSolution model dim control poppedBox newCandidates =
     let
         newPoints =
             List.map
@@ -771,16 +837,19 @@ foundSolution model poppedBox newCandidates =
         newModel =
             { model
                 | state =
-                    Solved
-                        (Block3d.centerPoint poppedBox)
-                        score
+                    Simulation dim
+                        (Solved
+                            (Block3d.centerPoint poppedBox)
+                            score
+                        )
+                        control
                 , candidates = newCandidates
                 , points = newPoints
                 , simSubBoxes = []
                 , simSelectedBox = Just poppedBox
             }
     in
-    if model.control == Skip then
+    if control == Skip then
         simulateStep newModel
 
     else
@@ -789,13 +858,15 @@ foundSolution model poppedBox newCandidates =
 
 splitCandidate :
     Model
+    -> Dimension
+    -> SimulationControl
     -> Block3d.Block3d Length.Meters Coords
     -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
     -> ( Model, Cmd msg )
-splitCandidate model poppedBox newCandidates =
+splitCandidate model dim control poppedBox newCandidates =
     let
         subBoxes =
-            createSubBoxes model.dimension poppedBox
+            createSubBoxes dim poppedBox
 
         pointsNoHighlight =
             List.map (highlight (\_ -> False))
@@ -808,7 +879,7 @@ splitCandidate model poppedBox newCandidates =
 
         newModel =
             { model
-                | state = SplitIntoSubBoxes widthInt
+                | state = Simulation dim (SplitIntoSubBoxes widthInt) control
                 , candidates = newCandidates
                 , toBeScored = List.reverse subBoxes
                 , points = pointsNoHighlight
@@ -816,7 +887,7 @@ splitCandidate model poppedBox newCandidates =
                 , simSelectedBox = Just poppedBox
             }
     in
-    if model.control == Skip then
+    if control == Skip then
         simulateStep newModel
 
     else
@@ -846,11 +917,7 @@ subscriptions model =
                 else
                     []
                )
-            ++ (if
-                    simulationInProgress model.state
-                        && model.control
-                        == FastForward
-                then
+            ++ (if isFastForwardingSim model.state then
                     [ Browser.Events.onAnimationFrame (always SteppedSim) ]
 
                 else
@@ -871,23 +938,38 @@ needsAnimated entity =
     List.length entity.futurePositions > 0
 
 
-simulationInProgress : SimulationState -> Bool
-simulationInProgress state =
+{-| Can fast-forward when controls are set to fast forward and we have some
+--| simulation to do that is in progress (not at initial state or solved)
+-}
+isFastForwardingSim : State -> Bool
+isFastForwardingSim state =
+    let
+        isControlFastForward c =
+            c == FastForward
+    in
     case state of
-        Solved _ _ ->
+        Intro ->
             False
 
-        Uninitialised ->
+        Wrapup ->
             False
 
-        Start ->
-            True
+        Simulation _ simState control ->
+            case simState of
+                Start ->
+                    isControlFastForward control
 
-        SplitIntoSubBoxes _ ->
-            True
+                SplitIntoSubBoxes _ ->
+                    isControlFastForward control
 
-        ScoredBox _ ->
-            True
+                ScoredBox _ ->
+                    isControlFastForward control
+
+                Solved _ _ ->
+                    False
+
+                Uninitialised ->
+                    False
 
 
 
@@ -899,24 +981,40 @@ view model =
     div []
         [ header [] [ div [] [ text "head" ] ]
         , main_ []
-            [ viewSectionScene model
-            , viewSectionControls model
-            , viewSectionCandidatesQueue
-                model.showRealPriority
-                model.dimension
-                model.userSelectedBox
-                model.candidates
-            , viewSectionToScoreQueue
-                model.dimension
-                model.userSelectedBox
-                model.toBeScored
-            ]
+            (case model.state of
+                Intro ->
+                    viewIntro
+
+                Simulation dim simState control ->
+                    [ viewSectionScene model dim
+                    , viewSectionControls model dim simState control
+                    , viewSectionCandidatesQueue
+                        model.showRealPriority
+                        dim
+                        model.userSelectedBox
+                        model.candidates
+                    , viewSectionToScoreQueue
+                        dim
+                        model.userSelectedBox
+                        model.toBeScored
+                    ]
+
+                Wrapup ->
+                    viewWrapup
+            )
         , footer [] [ div [] [ text "foot" ] ]
         ]
 
 
-viewSectionScene : Model -> Html Msg
-viewSectionScene model =
+viewIntro : List (Html Msg)
+viewIntro =
+    [ text "intro text"
+    , button [ onClick <| NextState ] [ text "next state" ]
+    ]
+
+
+viewSectionScene : Model -> Dimension -> Html Msg
+viewSectionScene model dimension =
     let
         viewpoint =
             Viewpoint3d.orbitZ
@@ -927,7 +1025,7 @@ viewSectionScene model =
                 }
 
         axes =
-            case model.dimension of
+            case dimension of
                 Dim1D ->
                     [ model.axes.x ]
 
@@ -1062,8 +1160,13 @@ viewSectionScene model =
                 []
 
 
-viewSectionControls : Model -> Html Msg
-viewSectionControls model =
+viewSectionControls :
+    Model
+    -> Dimension
+    -> SimulationState
+    -> SimulationControl
+    -> Html Msg
+viewSectionControls model dim simState control =
     let
         pluralise singular plural number =
             if number == 1 then
@@ -1072,11 +1175,50 @@ viewSectionControls model =
             else
                 plural
 
+        showCode =
+            p [] [ text "simulation" ]
+                :: viewPseudoCode simState
+                ++ (case simState of
+                        Solved answer score ->
+                            [ p []
+                                [ text <|
+                                    "Box has a width of 1 so the answer is: "
+                                , viewAnswer dim answer
+                                , text <| " with " ++ String.fromInt score ++ " " ++ pluralise "point" "points" score ++ " in range."
+                                ]
+                            ]
+
+                        Uninitialised ->
+                            []
+
+                        Start ->
+                            [ p [] [ text "Initial box added." ] ]
+
+                        SplitIntoSubBoxes width ->
+                            [ p []
+                                [ text <|
+                                    "Box has a width of "
+                                        ++ String.fromInt width
+                                        ++ ", so split into smaller boxes."
+                                ]
+                            ]
+
+                        ScoredBox score ->
+                            [ p []
+                                [ text <|
+                                    "Box has "
+                                        ++ String.fromInt score
+                                        ++ " "
+                                        ++ pluralise "point" "points" score
+                                        ++ " in range.  Added to queue."
+                                ]
+                            ]
+                   )
+
         showButtons =
-            [ p [] [ text "simulation" ]
-            , Html.Keyed.node "div"
+            [ Html.Keyed.node "div"
                 []
-                [ case model.state of
+                [ case simState of
                     Solved _ _ ->
                         ( "solved"
                         , div []
@@ -1091,7 +1233,7 @@ viewSectionControls model =
                         )
 
                     _ ->
-                        case model.control of
+                        case control of
                             FastForward ->
                                 ( "fastforwarding"
                                 , div []
@@ -1126,46 +1268,11 @@ viewSectionControls model =
                                 ( "skipping", div [] [ text "skipping..." ] )
                 ]
             ]
-                ++ viewPseudoCode model
-                ++ (case model.state of
-                        Solved answer score ->
-                            [ p []
-                                [ text <|
-                                    "Box has a width of 1 so the answer is: "
-                                , viewAnswer model.dimension answer
-                                , text <| " with " ++ String.fromInt score ++ " " ++ pluralise "point" "points" score ++ " in range."
-                                ]
-                            ]
-
-                        Uninitialised ->
-                            []
-
-                        Start ->
-                            [ p [] [ text "Initial box added." ] ]
-
-                        SplitIntoSubBoxes width ->
-                            [ p []
-                                [ text <|
-                                    "Box has a width of "
-                                        ++ String.fromInt width
-                                        ++ ", so split into smaller boxes."
-                                ]
-                            ]
-
-                        ScoredBox score ->
-                            [ p []
-                                [ text <|
-                                    "Box has "
-                                        ++ String.fromInt score
-                                        ++ " "
-                                        ++ pluralise "point" "points" score
-                                        ++ " in range.  Added to queue."
-                                ]
-                            ]
-                   )
     in
     section [ id "controls" ] <|
-        [ p [] [ text "dimension" ]
+        [ text "state control"
+        , button [ onClick <| NextState ] [ text "next state" ]
+        , p [] [ text "dimension" ]
         , button [ onClick IncreasedDimension ] [ text "next dim" ]
         , button [ onClick RequestedViewportSize ] [ text "recalcsize" ]
         , p [] [ text "camera" ]
@@ -1184,6 +1291,7 @@ viewSectionControls model =
                 ]
             ]
         ]
+            ++ showCode
             ++ showButtons
             ++ (if model.simSelectedBox /= Nothing || model.userSelectedBox /= Nothing then
                     [ p [] [ text "show extra shapes" ]
@@ -1260,14 +1368,14 @@ viewSectionControls model =
                )
 
 
-viewPseudoCode : Model -> List (Html msg)
-viewPseudoCode model =
+viewPseudoCode : SimulationState -> List (Html msg)
+viewPseudoCode simState =
     let
         start =
-            model.state == Start
+            simState == Start
 
         solved =
-            case model.state of
+            case simState of
                 Solved _ _ ->
                     True
 
@@ -1275,7 +1383,7 @@ viewPseudoCode model =
                     False
 
         split =
-            case model.state of
+            case simState of
                 SplitIntoSubBoxes _ ->
                     True
 
@@ -1283,7 +1391,7 @@ viewPseudoCode model =
                     False
 
         score =
-            case model.state of
+            case simState of
                 ScoredBox _ ->
                     True
 
@@ -1376,6 +1484,13 @@ viewSectionToScoreQueue dimension selectedBlock toBeScored =
         ]
 
 
+viewWrapup : List (Html Msg)
+viewWrapup =
+    [ text "wrapup text"
+    , button [ onClick <| NextState ] [ text "back to start" ]
+    ]
+
+
 createSceneEntity : AnimatedPoint -> Scene3d.Entity Coords
 createSceneEntity entity =
     let
@@ -1451,8 +1566,12 @@ viewBlock dimension selectedBlock block =
                 Nothing ->
                     False
 
+        isDigitorDash char =
+            Char.isDigit char || char == '-'
+
         inputID =
-            String.filter Char.isDigit (widthString ++ centreString)
+            (widthString ++ centreString)
+                |> String.filter isDigitorDash
                 |> (++) "highlight-"
 
         attrs =
