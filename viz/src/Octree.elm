@@ -1114,7 +1114,7 @@ viewSectionIntro state =
         , p []
             [ text "data structure explain: stack -> queue -> priority queue" ]
         , p [] [ text "simplify problem to 1 dimension to make it easier" ]
-        , div [ class "push-right" ]
+        , div [ class "align-right" ]
             [ button
                 [ onClick <| ChangedState <| getNextState state
                 , class "primary"
@@ -1681,7 +1681,7 @@ to prioritse smaller boxes with the same number of points in range
         , p [] [ text """check in range was actually checking rhombicubeoctahedron 
 shape not cube in 3d""" ]
         , p [] [ text "to see priority/shape and to play with few extra toggles:" ]
-        , div [ class "push-right" ]
+        , div [ class "align-right" ]
             [ button [ onClick <| ChangedState <| getNextState state ]
                 [ text "back to start"
                 ]

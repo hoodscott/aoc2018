@@ -1,4 +1,4 @@
-/* #region CSS Reset from https://www.joshwcomeau.com/css/custom-css-reset/ **/
+/* #region CSS Reset from https://www.joshwcomeau.com/css/custom-css-reset/ */
 /* Use a more-intuitive box-sizing model */
 *,
 *::before,
@@ -54,7 +54,7 @@ h6 {
 
 /* #endregion */
 
-/* #region misc */
+/* #region General */
 :root {
   --colour-primary: hsl(240, 15%, 20%);
   --colour-secondary: hsl(240, 15%, 76%);
@@ -85,8 +85,7 @@ html {
   position: relative;
 }
 
-p,
-.push-right {
+p {
   max-width: 80ch;
 }
 
@@ -95,35 +94,8 @@ p,
   flex-direction: column;
 }
 
-.push-right {
-  display: flex;
-  justify-content: end;
-}
-
-.status-bar {
-  min-height: 2lh;
-  display: flex;
-  flex-direction: row-reverse;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.status-bar>* {
-  margin: 0;
-}
-
-.status-bar>.status-buttons {
+.align-right {
   text-align: right;
-  flex: 1 0 0%;
-}
-
-.status-bar>p {
-  flex: 1 1 40ch
-}
-
-.status-bar>.status-buttons>.button-group {
-  justify-content: end;
 }
 
 .visually-hidden {
@@ -137,6 +109,29 @@ p,
   overflow: hidden;
   white-space: nowrap;
 }
+
+/* #endregion */
+
+/* #region Permanent Scrollbar */
+
+body {
+  overflow-y: scroll;
+  scrollbar-color: var(--colour-secondary) var(--colour-primary);
+}
+
+body::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+body::-webkit-scrollbar-thumb {
+  background: var(--colour-secondary);
+}
+
+body::-webkit-scrollbar-track {
+  background: var(--colour-primary);
+}
+
+/* #endregion */
 
 /* #region Input */
 
@@ -206,28 +201,43 @@ button:disabled {
 
 /* #endregion */
 
-/* #region Permanent Scrollbar */
-
-body {
-  overflow-y: scroll;
-  scrollbar-color: var(--colour-secondary) var(--colour-primary);
+/* #region Tables */
+table {
+  width: 100%;
+  max-width: 400px;
+  text-align: right;
+  border-collapse: collapse;
 }
 
-body::-webkit-scrollbar {
-  width: 0.5rem;
+table,
+thead {
+  border: 1px solid var(--colour-secondary);
 }
 
-body::-webkit-scrollbar-thumb {
+thead {
+  font-weight: bolder;
+}
+
+td,
+th {
+  padding: 0 0.5rem;
+}
+
+tbody>tr:nth-child(odd) {
   background: var(--colour-secondary);
+  color: var(--colour-primary);
 }
 
-body::-webkit-scrollbar-track {
-  background: var(--colour-primary);
+@media only screen and (max-width: 440px) {
+  table {
+    display: block;
+    overflow-x: scroll;
+  }
 }
 
 /* #endregion */
 
-/* #region layout */
+/* #region Layout */
 
 body>div:first-child {
   min-height: 100vh;
@@ -266,6 +276,19 @@ main {
   padding: 1rem;
 }
 
+main>#intro,
+main>#wrapup {
+  width: 100%;
+  max-width: 80ch;
+}
+
+@media only screen and (max-width: 949px) {
+
+  main>#intro,
+  main>#wrapup {
+    align-self: center;
+  }
+}
 
 @media only screen and (min-width: 950px) {
   main {
@@ -282,7 +305,6 @@ main {
   main>#wrapup {
     grid-area: 1 / 1 / last-line / end;
     justify-self: center;
-    width: 80ch;
   }
 
   main>#scene-window {
@@ -317,6 +339,10 @@ p {
   margin: 1em 0;
 }
 
+section>p:first-child {
+  margin-top: 0;
+}
+
 /* #endregion */
 
 /* #region Header/Footer */
@@ -339,66 +365,37 @@ footer>div {
 
 /* #endregion */
 
-/* #region Camera Controls */
+/* #region Status Bar */
 
-#scene-window {
-  border: 1px solid var(--colour-secondary);
-  color: var(--colour-primary);
-}
-
-#scene-window>div:first-child {
-  cursor: move;
-  min-width: 100%;
-  min-height: width;
+.status-bar {
+  min-height: 2lh;
   display: flex;
-  justify-content: center;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-#scene-window .camera-controls {
-  background: var(--colour-secondary);
-  min-height: 30px;
-  display: flex;
+.status-bar>* {
+  margin: 0;
 }
 
-/* #endregion */
-
-/* #region Tables */
-table {
-  width: 100%;
-  max-width: 400px;
+.status-bar>.status-buttons {
   text-align: right;
-  border-collapse: collapse;
+  flex: 1 0 0%;
 }
 
-table,
-thead {
-  border: 1px solid var(--colour-secondary);
+.status-bar>p {
+  flex: 1 1 40ch
 }
 
-thead {
-  font-weight: bolder;
-}
-
-td,
-th {
-  padding: 0 0.5rem;
-}
-
-tbody>tr:nth-child(odd) {
-  background: var(--colour-secondary);
-  color: var(--colour-primary);
-}
-
-@media only screen and (max-width: 440px) {
-  table {
-    display: block;
-    overflow-x: scroll;
-  }
+.status-bar>.status-buttons>.button-group {
+  justify-content: end;
 }
 
 /* #endregion */
 
-/* #region Code highlights */
+/* #region Code Highlights */
 
 .code-container {
   font-family: monospace;
@@ -426,6 +423,29 @@ code.active {
 code.skipped {
   background: var(--colour-primary);
   color: var(--colour-secondary);
+}
+
+/* #endregion */
+
+/* #region Camera Controls */
+
+#scene-window {
+  border: 1px solid var(--colour-secondary);
+  color: var(--colour-primary);
+}
+
+#scene-window>div:first-child {
+  cursor: move;
+  min-width: 100%;
+  min-height: width;
+  display: flex;
+  justify-content: center;
+}
+
+#scene-window .camera-controls {
+  background: var(--colour-secondary);
+  min-height: 30px;
+  display: flex;
 }
 
 /* #endregion */
