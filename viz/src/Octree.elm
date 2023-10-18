@@ -9,7 +9,7 @@ import Browser.Dom
 import Browser.Events
 import Camera3d
 import Char
-import Color
+import Data exposing (Coords, palette)
 import Direction3d
 import Duration exposing (Duration)
 import Html exposing (..)
@@ -45,10 +45,6 @@ main =
 
 
 -- TYPES
-
-
-type Coords
-    = Coords
 
 
 type Projection
@@ -89,6 +85,7 @@ type alias Target =
 
 type alias AnimatedPoint =
     { position : Point3d.Point3d Length.Meters Coords
+    , visualPosition : Point3d.Point3d Length.Meters Coords
     , futurePositions : List Target
     , highlighted : Bool
     }
@@ -152,7 +149,7 @@ initialModel =
     , toBeScored = []
 
     -- simulation visuals (scene3d elements)
-    , points = List.map createAnimatedEntity points1D
+    , points = List.map createAnimatedEntity Data.points1D
     , simSelectedBox = Nothing
     , simSubBoxes = []
     , userSelectedBox = Nothing
@@ -162,17 +159,17 @@ initialModel =
                 65
         in
         { x =
-            Scene3d.lineSegment (Scene3d.Material.color Color.red) <|
+            Scene3d.lineSegment (Scene3d.Material.color palette.red) <|
                 LineSegment3d.from
                     (Point3d.meters -axisSize 0 0)
                     (Point3d.meters axisSize 0 0)
         , y =
-            Scene3d.lineSegment (Scene3d.Material.color Color.green) <|
+            Scene3d.lineSegment (Scene3d.Material.color palette.green) <|
                 LineSegment3d.from
                     (Point3d.meters 0 -axisSize 0)
                     (Point3d.meters 0 axisSize 0)
         , z =
-            Scene3d.lineSegment (Scene3d.Material.color Color.blue) <|
+            Scene3d.lineSegment (Scene3d.Material.color palette.blue) <|
                 LineSegment3d.from
                     (Point3d.meters 0 0 -axisSize)
                     (Point3d.meters 0 0 axisSize)
@@ -189,7 +186,7 @@ initialModel =
 
 createAnimatedEntity : Point3d.Point3d Length.Meters Coords -> AnimatedPoint
 createAnimatedEntity point =
-    { position = point, futurePositions = [], highlighted = False }
+    AnimatedPoint point point [] False
 
 
 init : () -> ( Model, Cmd msg )
@@ -380,19 +377,31 @@ update msg model =
                         dimPoints =
                             case dim of
                                 Dim1D ->
-                                    points1D
+                                    Data.points1D
 
                                 Dim2D ->
-                                    points2D
+                                    Data.points2D
 
                                 Dim3D ->
-                                    points3D
+                                    Data.points3D
+
+                        shouldAnimate =
+                            case model.state of
+                                Intro ->
+                                    False
+
+                                Wrapup ->
+                                    False
+
+                                Simulation _ _ _ ->
+                                    True
 
                         newModel =
                             { model
                                 | state = state
                                 , points =
                                     newCoords
+                                        shouldAnimate
                                         model.points
                                         dimPoints
                             }
@@ -428,22 +437,27 @@ update msg model =
                         initialPoints =
                             List.map (highlight (\_ -> False))
                                 model.points
+
+                        newModel =
+                            { model
+                                | state = Simulation dim Start Manual
+                                , simSelectedBox = Just initialBox
+                                , userSelectedBox = Nothing
+                                , points = initialPoints
+                                , candidates =
+                                    PriorityQueue.insert
+                                        (toFloat <| List.length model.points)
+                                        initialBox
+                                        []
+                                , toBeScored = []
+                                , simSubBoxes = []
+                            }
                     in
-                    ( { model
-                        | state = Simulation dim Start Manual
-                        , simSelectedBox = Just initialBox
-                        , userSelectedBox = Nothing
-                        , points = initialPoints
-                        , candidates =
-                            PriorityQueue.insert
-                                (toFloat <| List.length model.points)
-                                initialBox
-                                []
-                        , toBeScored = []
-                        , simSubBoxes = []
-                      }
-                    , Cmd.none
-                    )
+                    if model.camSize /= Nothing then
+                        ( newModel, Cmd.none )
+
+                    else
+                        update RequestedViewportSize newModel
 
         SteppedSim ->
             simulateStep model
@@ -637,7 +651,8 @@ animateEntity duration entity =
         currentTarget :: futurePositions ->
             let
                 difference =
-                    LineSegment3d.from entity.position currentTarget.position
+                    LineSegment3d.from entity.visualPosition
+                        currentTarget.position
 
                 direction : Maybe (Direction3d.Direction3d Coords)
                 direction =
@@ -645,7 +660,7 @@ animateEntity duration entity =
             in
             if Length.inMeters (LineSegment3d.length difference) < 0.5 then
                 { entity
-                    | position = currentTarget.position
+                    | visualPosition = currentTarget.position
                     , futurePositions = futurePositions
                 }
 
@@ -667,10 +682,10 @@ animateEntity duration entity =
                             newFrom =
                                 Point3d.translateBy
                                     (Vector3d.withLength length dir)
-                                    entity.position
+                                    entity.visualPosition
                         in
                         { entity
-                            | position = newFrom
+                            | visualPosition = newFrom
                             , futurePositions = entity.futurePositions
                         }
 
@@ -682,10 +697,11 @@ animateEntity duration entity =
 
 
 newCoords :
-    List AnimatedPoint
+    Bool
+    -> List AnimatedPoint
     -> List (Point3d.Point3d Length.Meters Coords)
     -> List AnimatedPoint
-newCoords entities newPoints =
+newCoords shouldAnimate entities newPoints =
     let
         setNewCoords :
             AnimatedPoint
@@ -697,13 +713,28 @@ newCoords entities newPoints =
                     Point3d.interpolateFrom entity.position newPoint
             in
             { entity
-                | futurePositions =
+                | position = newPoint
+                , futurePositions =
                     List.map2 Target
                         (List.map interpolated [ 0.6, 0.9, 0.95, 1 ])
                         [ 4, 2, 1.5, 1 ]
             }
+
+        setNewCoordsDirect entity newPoint =
+            { entity
+                | position = newPoint
+                , visualPosition = newPoint
+                , futurePositions = []
+            }
+
+        setFunction =
+            if shouldAnimate then
+                setNewCoords
+
+            else
+                setNewCoordsDirect
     in
-    List.map2 setNewCoords entities newPoints
+    List.map2 setFunction entities newPoints
 
 
 simulateStep : Model -> ( Model, Cmd msg )
@@ -1051,16 +1082,18 @@ viewHeader state =
                             sDim == dim
 
         buttonStep ( newState, buttonText ) =
-            button
+            ( buttonText
+            , button
                 [ onClick <| ChangedState <| newState
                 , classList [ ( "current", isCurrent newState ) ]
                 , disabled <| isCurrent newState
                 ]
                 [ text buttonText ]
+            )
     in
     div []
         [ span [] [ text "head" ]
-        , div [ class "button-group" ] <|
+        , Html.Keyed.node "nav" [ class "button-group" ] <|
             List.map buttonStep
                 [ ( Intro, "1" )
                 , ( Simulation Dim1D Start Manual, "2" )
@@ -1082,7 +1115,10 @@ viewSectionIntro state =
             [ text "data structure explain: stack -> queue -> priority queue" ]
         , p [] [ text "simplify problem to 1 dimension to make it easier" ]
         , div [ class "push-right" ]
-            [ button [ onClick <| ChangedState <| getNextState state ]
+            [ button
+                [ onClick <| ChangedState <| getNextState state
+                , class "primary"
+                ]
                 [ text "next state" ]
             ]
         ]
@@ -1124,7 +1160,7 @@ viewSectionScene model dimension =
         boundingBox =
             case model.simSelectedBox of
                 Just box ->
-                    createEdges Color.white box
+                    createEdges palette.secondary box
 
                 Nothing ->
                     []
@@ -1132,7 +1168,7 @@ viewSectionScene model dimension =
         boundingBoxUser =
             case model.userSelectedBox of
                 Just box ->
-                    createEdges Color.red box
+                    createEdges palette.tertiaryAlt box
 
                 Nothing ->
                     []
@@ -1177,7 +1213,7 @@ viewSectionScene model dimension =
                     []
 
         showSubBox =
-            List.map (createEdges Color.white) model.simSubBoxes
+            List.map (createEdges palette.secondary) model.simSubBoxes
                 |> List.concat
     in
     section
@@ -1236,14 +1272,13 @@ viewSectionScene model dimension =
                     ]
                 , div [ class "camera-controls" ] <|
                     (if model.camMoved || model.showOptions then
-                        [ div [ class "button-group" ]
+                        div [ class "button-group" ]
                             [ button [ onClick SelectedTopDownCamera ]
                                 [ text "top down" ]
                             , button [ onClick SelectedInitialCamera ]
                                 [ text "fourtyfive" ]
                             ]
-                        ]
-                            ++ (if model.showOptions then
+                            :: (if model.showOptions then
                                     [ div []
                                         [ label [ for "toggle-projection" ]
                                             [ input
@@ -1355,7 +1390,7 @@ viewSectionControls model state dim simState control =
                 [ case simState of
                     Solved _ _ ->
                         ( "solved"
-                        , div []
+                        , div [ class "button-group" ]
                             [ button
                                 [ onClick StartedSim ]
                                 [ text "reset sim" ]
@@ -1363,6 +1398,7 @@ viewSectionControls model state dim simState control =
                                 [ onClick <|
                                     ChangedState <|
                                         getNextState state
+                                , class "primary"
                                 ]
                                 [ text "next dimension" ]
                             ]
@@ -1372,21 +1408,23 @@ viewSectionControls model state dim simState control =
                         case control of
                             FastForward ->
                                 ( "fastforwarding"
-                                , div []
+                                , div [ class "button-group" ]
                                     [ button
                                         [ onClick <| SetControl Manual ]
                                         [ text "stop fast forward" ]
                                     , button
-                                        [ onClick <| SetControl Skip ]
+                                        [ onClick <| SetControl Skip
+                                        , class "primary"
+                                        ]
                                         [ text "skip to end" ]
                                     ]
                                 )
 
                             Manual ->
                                 ( "stepper"
-                                , div []
+                                , div [ class "button-group" ]
                                     [ button
-                                        [ onClick SteppedSim ]
+                                        [ onClick SteppedSim, class "primary" ]
                                         [ text "step" ]
                                     , button
                                         [ onClick <| SetControl FastForward ]
@@ -1394,9 +1432,6 @@ viewSectionControls model state dim simState control =
                                     , button
                                         [ onClick <| SetControl Skip ]
                                         [ text "skip to end" ]
-                                    , button
-                                        [ onClick StartedSim ]
-                                        [ text "reset" ]
                                     ]
                                 )
 
@@ -1406,8 +1441,8 @@ viewSectionControls model state dim simState control =
     in
     section [ id "controls" ] <|
         viewSimStateExplain dim
-            ++ [ div [ class "status-bar" ] [ showButtons, viewStatus ] ]
-            ++ showCode
+            ++ div [ class "status-bar" ] [ showButtons, viewStatus ]
+            :: showCode
             ++ (if
                     ((model.simSelectedBox /= Nothing)
                         || (model.userSelectedBox /= Nothing)
@@ -1550,7 +1585,7 @@ viewSectionCandidatesQueue :
 viewSectionCandidatesQueue show showOptions showRealPriority dimension selectedBlock candidates =
     if show then
         section [ id "priority-table" ] <|
-            [ table []
+            table []
                 [ caption []
                     [ text <|
                         "Priority Queue - Total: "
@@ -1569,8 +1604,7 @@ viewSectionCandidatesQueue show showOptions showRealPriority dimension selectedB
                         (showQueueItem showRealPriority dimension selectedBlock)
                         candidates
                 ]
-            ]
-                ++ (if showOptions then
+                :: (if showOptions then
                         [ label
                             [ for "toggle-precision" ]
                             [ input
@@ -1634,6 +1668,9 @@ viewSectionWrapup state =
 pattern is (2^num dimension - creating twice as many subboxes each dimension)
 """
             ]
+        , p [] [ text """how are we sure found?  if there was region in range 
+of more points then we would have already orocessed it into sub regions since
+it would have a higher priority""" ]
         , p [] [ text "applications?" ] -- todo find good examples (boids?)
         , p []
             [ text """trick to make algo more efficient is to alter priority.
@@ -1649,6 +1686,7 @@ shape not cube in 3d""" ]
                 [ text "back to start"
                 ]
             ]
+        , div [] [ text "links - aoc, scene3d, elm" ]
         ]
     ]
 
@@ -1679,14 +1717,14 @@ createSceneEntity entity =
     let
         colour =
             if entity.highlighted then
-                Color.yellow
+                palette.tertiary
 
             else
-                Color.white
+                palette.tertiaryAlt
     in
     Scene3d.point { radius = Pixels.float 2.5 }
         (Scene3d.Material.color colour)
-        entity.position
+        entity.visualPosition
 
 
 viewAnswer : Dimension -> Point3d.Point3d Length.Meters Coords -> Html msg
@@ -1822,7 +1860,7 @@ drawRhombiDodecEdges centrePoint cubeVertex =
             LineSegment3d.from from to
                 |> LineSegment3d.rotateAround verticalAxis (Angle.degrees 90)
                 |> LineSegment3d.rotateAround axis (Angle.degrees rotate)
-                |> Scene3d.lineSegment (Scene3d.Material.color Color.orange)
+                |> Scene3d.lineSegment (Scene3d.Material.color palette.orange)
     in
     case axisThroughCentre of
         Just axis ->
@@ -1883,7 +1921,7 @@ drawTetraHexEdges range box =
             List.map (createLineSegment point) (Block3d.vertices box)
                 |> List.filter isShortSegment
                 |> List.map
-                    (Scene3d.lineSegment (Scene3d.Material.color Color.yellow))
+                    (Scene3d.lineSegment (Scene3d.Material.color palette.pink))
     in
     List.map createEdges points
         |> List.concat
@@ -1951,7 +1989,7 @@ drawRhombiCubeEdges range box =
                 |> List.filter isShortSegment
                 |> List.map
                     (Scene3d.lineSegment
-                        (Scene3d.Material.color Color.purple)
+                        (Scene3d.Material.color palette.purple)
                     )
 
         createLine from to =
@@ -1987,27 +2025,3 @@ drawRhombiCubeEdges range box =
     in
     List.map (buildEdges outerVertices) outerVertices
         |> List.concat
-
-
-
--- DATA
-
-
-randomPoints : List ( Float, Float, Float )
-randomPoints =
-    [ ( -14, -27, 25 ), ( 44, 38, 5 ), ( -50, -23, -13 ), ( 48, 4, -19 ), ( -23, 36, 44 ), ( -50, 10, -34 ), ( -18, 22, 0 ), ( -1, -2, 35 ), ( -43, -3, 0 ), ( -28, -11, 6 ), ( -2, -9, 4 ), ( 13, -27, 47 ), ( 26, -25, 11 ), ( -20, 22, -4 ), ( -11, 6, 31 ), ( -18, -34, 42 ), ( 1, 26, 12 ), ( 44, -37, 6 ), ( 42, -30, -11 ), ( 1, -50, -27 ), ( 6, -32, -11 ), ( 50, 9, 9 ), ( -2, 48, 7 ), ( -21, -28, -11 ), ( -7, 27, -23 ), ( -45, 19, 11 ), ( 30, 37, 26 ), ( 24, -35, -44 ), ( -11, -13, 40 ), ( 14, 27, 22 ), ( -41, -19, -8 ), ( -49, 36, -42 ), ( 48, 4, 41 ), ( 23, -12, -47 ), ( -30, 28, 34 ), ( -44, -38, -47 ), ( -47, -13, -49 ), ( 28, -5, 30 ), ( -20, 10, 30 ), ( 38, 41, -12 ), ( -4, -47, -3 ), ( -22, -28, -9 ), ( -8, 27, 31 ), ( 25, 17, -24 ), ( -7, -43, 3 ), ( 48, -6, 15 ), ( 3, 42, 36 ), ( 42, -36, 49 ), ( 16, 20, 30 ), ( -11, 0, -28 ), ( 25, 34, 10 ), ( 45, -49, 28 ), ( -30, -12, -30 ), ( -50, -41, 10 ), ( -20, 15, -50 ), ( -35, 6, -1 ), ( 34, 39, -44 ), ( 25, 13, 10 ), ( 39, 43, 14 ), ( -18, -16, 39 ), ( 39, -36, 11 ), ( 16, 3, -33 ), ( -32, -21, -40 ), ( -10, -32, 48 ), ( -35, 47, 32 ), ( 12, -18, 20 ), ( 49, -26, 32 ), ( 22, -46, 40 ), ( 16, -46, -42 ), ( -13, -48, -26 ), ( -34, -18, 20 ), ( -8, 33, 4 ), ( -3, -33, -47 ), ( 35, -7, -27 ), ( -19, 19, 42 ), ( 45, 30, -20 ), ( -20, -40, -13 ), ( -16, 17, 0 ), ( 22, -9, 47 ), ( 0, 41, 24 ), ( -36, 41, 2 ), ( -14, 23, 5 ), ( -35, 32, 20 ), ( -6, 3, 13 ), ( -43, 23, 49 ), ( 0, 45, 25 ), ( 36, 15, -29 ), ( -28, 7, -44 ), ( -3, 43, -43 ), ( 31, 50, 22 ), ( -42, 46, 12 ), ( -2, -6, -16 ), ( -41, 13, -26 ), ( -33, 21, 36 ), ( -33, 6, 1 ), ( -32, -37, -38 ), ( -15, 24, 1 ), ( 1, -48, 22 ), ( 33, 7, 46 ), ( -20, -18, -27 ), ( -43, 11, -50 ) ]
-
-
-points3D : List (Point3d.Point3d Length.Meters Coords)
-points3D =
-    List.map (\( x, y, z ) -> Point3d.meters x y z) randomPoints
-
-
-points2D : List (Point3d.Point3d Length.Meters Coords)
-points2D =
-    List.map (\( x, y, _ ) -> Point3d.meters x y 0) randomPoints
-
-
-points1D : List (Point3d.Point3d Length.Meters Coords)
-points1D =
-    List.map (\( x, _, _ ) -> Point3d.meters x 0 0) randomPoints
