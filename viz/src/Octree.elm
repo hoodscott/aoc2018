@@ -69,8 +69,7 @@ type State
 
 
 type SimulationState
-    = Uninitialised
-    | Start
+    = Start
     | SplitIntoSubBoxes Int
     | ScoredBox Int
     | Solved (Point3d.Point3d Length.Meters Coords) Int
@@ -97,13 +96,13 @@ type alias AnimatedPoint =
 
 type alias Model =
     { -- camera
-      azimuth : Angle.Angle -- orbit angle of the camera around the focal point
-    , elevation : Angle.Angle -- angle of the camera up from the XY plane
-    , distance : Length.Length -- distance camera is from origin
-    , orbiting : Bool -- are we moving the camera
-    , cameraMoved : Bool -- has camera moved yet?
-    , projection : Projection -- camera projection
-    , cameraSize : Maybe (Quantity Int Pixels)
+      camAzimuth : Angle.Angle -- orbit angle around the focal point
+    , camElevation : Angle.Angle -- angle up from the XY plane
+    , camDistance : Length.Length -- distance from origin
+    , camOrbiting : Bool -- are we moving the camera
+    , camMoved : Bool -- has camera move?
+    , camProjection : Projection -- orthographic or perspective
+    , camSize : Maybe (Quantity Int Pixels)
 
     -- problem simulation
     , state : State
@@ -123,6 +122,7 @@ type alias Model =
         }
 
     -- extra options toggles
+    , showOptions : Bool
     , showRhombiCube : Bool
     , showRhombiDodec : Bool
     , showTetrakis : Bool
@@ -137,13 +137,13 @@ type alias Model =
 initialModel : Model
 initialModel =
     { --camera
-      azimuth = Angle.degrees 225
-    , elevation = Angle.degrees 30
-    , distance = Length.meters 200
-    , orbiting = False
-    , cameraMoved = False
-    , projection = Orthographic
-    , cameraSize = Nothing
+      camAzimuth = Angle.degrees 270
+    , camElevation = Angle.degrees 90
+    , camDistance = Length.meters 270
+    , camOrbiting = False
+    , camMoved = False
+    , camProjection = Orthographic
+    , camSize = Nothing
 
     -- problem simulation
     , state = Intro
@@ -152,7 +152,7 @@ initialModel =
     , toBeScored = []
 
     -- simulation visuals (scene3d elements)
-    , points = List.map createAnimatedEntity points3D
+    , points = List.map createAnimatedEntity points1D
     , simSelectedBox = Nothing
     , simSubBoxes = []
     , userSelectedBox = Nothing
@@ -179,6 +179,7 @@ initialModel =
         }
 
     -- extra options toggles
+    , showOptions = False
     , showRhombiCube = False
     , showRhombiDodec = False
     , showTetrakis = False
@@ -201,29 +202,28 @@ init _ =
 
 
 type Msg
-    = -- camera control
-      SelectedTopDownCamera
+    = -- mouse events
+      DepressedMouse
+    | ReleasedMouse
+    | MovedMouse (Quantity Float Pixels) (Quantity Float Pixels)
+      -- camera controls
+    | SelectedTopDownCamera
     | SelectedInitialCamera
     | ToggledProjection
     | ChangedZoom Html.Events.Extra.Wheel.Event
     | ReturnedViewportSize (Result Browser.Dom.Error Browser.Dom.Element)
     | RequestedViewportSize
-      -- mouse events
-    | DepressedMouse
-    | ReleasedMouse
-    | MovedMouse (Quantity Float Pixels) (Quantity Float Pixels)
       -- simulation controls
     | ChangedState State
     | StartedSim
     | SteppedSim
-    | IncreasedDimension
     | SetControl SimulationControl
     | SelectedBox (Maybe (Block3d.Block3d Length.Meters Coords))
       -- optional toggles
+    | ToggledPrecision Bool
     | ToggledRhombiCubeOption Bool
     | ToggledRhombiDodecOption Bool
     | ToggledTetraHexOption Bool
-    | ToggledPrecision Bool
       -- animation ticks
     | TickedAnimation Duration
 
@@ -231,14 +231,15 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        -- mouse events
         DepressedMouse ->
-            ( { model | orbiting = True }, Cmd.none )
+            ( { model | camOrbiting = True }, Cmd.none )
 
         ReleasedMouse ->
-            ( { model | orbiting = False }, Cmd.none )
+            ( { model | camOrbiting = False }, Cmd.none )
 
         MovedMouse dx dy ->
-            if model.orbiting then
+            if model.camOrbiting then
                 let
                     -- orbit the camera by 1 degree per pixel of drag
                     rotationRate =
@@ -246,12 +247,12 @@ update msg model =
 
                     -- adjust azimuth according to horizontal mouse motion
                     newAzimuth =
-                        model.azimuth
+                        model.camAzimuth
                             |> Quantity.minus (dx |> Quantity.at rotationRate)
 
                     -- adjust elevation according to vertical mouse motion
                     newElevation =
-                        model.elevation
+                        model.camElevation
                             |> Quantity.plus (dy |> Quantity.at rotationRate)
                             -- clamp to make sure camera cannot go past vertical
                             -- in either direction
@@ -260,9 +261,9 @@ update msg model =
                                 (Angle.degrees 90)
                 in
                 ( { model
-                    | azimuth = newAzimuth
-                    , elevation = newElevation
-                    , cameraMoved = True
+                    | camAzimuth = newAzimuth
+                    , camElevation = newElevation
+                    , camMoved = True
                   }
                 , Cmd.none
                 )
@@ -270,78 +271,19 @@ update msg model =
             else
                 ( model, Cmd.none )
 
-        IncreasedDimension ->
-            let
-                newModel =
-                    case model.state of
-                        Intro ->
-                            model
-
-                        Simulation dim _ _ ->
-                            case dim of
-                                Dim1D ->
-                                    { model
-                                        | state =
-                                            Simulation
-                                                Dim2D
-                                                Uninitialised
-                                                Manual
-                                        , points =
-                                            newCoords
-                                                model.points
-                                                points2D
-                                    }
-
-                                Dim2D ->
-                                    { model
-                                        | state =
-                                            Simulation
-                                                Dim3D
-                                                Uninitialised
-                                                Manual
-                                        , points =
-                                            newCoords
-                                                model.points
-                                                points3D
-                                    }
-
-                                Dim3D ->
-                                    { model
-                                        | state =
-                                            Simulation
-                                                Dim1D
-                                                Uninitialised
-                                                Manual
-                                        , points =
-                                            newCoords
-                                                model.points
-                                                points1D
-                                    }
-
-                        Wrapup ->
-                            model
-            in
-            update StartedSim newModel
-
-        TickedAnimation duration ->
-            ( { model
-                | points = List.map (animateEntity duration) model.points
-              }
-            , Cmd.none
-            )
-
+        -- camera controls
         SelectedTopDownCamera ->
             ( { model
-                | azimuth = Angle.degrees 270
-                , elevation = Angle.degrees 90
+                | camAzimuth = Angle.degrees 270
+                , camElevation = Angle.degrees 90
               }
             , Cmd.none
             )
 
         SelectedInitialCamera ->
             ( { model
-                | azimuth = Angle.degrees 225
-                , elevation = Angle.degrees 30
+                | camAzimuth = Angle.degrees 225
+                , camElevation = Angle.degrees 30
               }
             , Cmd.none
             )
@@ -349,58 +291,25 @@ update msg model =
         ToggledProjection ->
             let
                 newProjection =
-                    case model.projection of
+                    case model.camProjection of
                         Orthographic ->
                             Perspective
 
                         Perspective ->
                             Orthographic
             in
-            ( { model | projection = newProjection }, Cmd.none )
-
-        ToggledRhombiDodecOption b ->
-            ( { model | showRhombiDodec = b }, Cmd.none )
-
-        ToggledTetraHexOption b ->
-            ( { model | showTetrakis = b }, Cmd.none )
-
-        ToggledRhombiCubeOption b ->
-            ( { model | showRhombiCube = b }, Cmd.none )
-
-        ToggledPrecision b ->
-            ( { model | showRealPriority = b }, Cmd.none )
-
-        SetControl c ->
-            let
-                newModel =
-                    case model.state of
-                        Intro ->
-                            model
-
-                        Wrapup ->
-                            model
-
-                        Simulation dim simState _ ->
-                            { model | state = Simulation dim simState c }
-            in
-            if c == Skip then
-                simulateStep newModel
-
-            else
-                ( newModel, Cmd.none )
-
-        SelectedBox box ->
-            ( { model | userSelectedBox = box }, Cmd.none )
+            ( { model | camProjection = newProjection }, Cmd.none )
 
         ChangedZoom event ->
             ( { model
-                | distance =
+                | camDistance =
                     Quantity.plus
-                        model.distance
+                        model.camDistance
                         (Length.meters <| event.deltaY / 10)
                         |> Quantity.clamp
                             (Length.meters 50)
                             (Length.meters 350)
+                , camMoved = True
               }
             , Cmd.none
             )
@@ -433,7 +342,7 @@ update msg model =
                                 |> Pixels.int
                     in
                     ( { model
-                        | cameraSize = Just newWidth
+                        | camSize = Just newWidth
                       }
                     , Cmd.none
                     )
@@ -441,16 +350,54 @@ update msg model =
                 Err _ ->
                     ( model, Cmd.none )
 
+        -- simulation controls
         ChangedState state ->
-            case model.state of
+            case state of
                 Intro ->
                     ( { model | state = state }, Cmd.none )
 
                 Wrapup ->
-                    ( { model | state = state }, Cmd.none )
+                    let
+                        togglePrecisionFirstTime =
+                            if not model.showOptions then
+                                -- first time we wrapup, turn on
+                                True
 
-                Simulation _ _ _ ->
-                    ( { model | state = state }, Cmd.none )
+                            else
+                                -- subsequent times, just keep value
+                                model.showRealPriority
+                    in
+                    ( { model
+                        | state = state
+                        , showOptions = True
+                        , showRealPriority = togglePrecisionFirstTime
+                      }
+                    , Cmd.none
+                    )
+
+                Simulation dim _ _ ->
+                    let
+                        dimPoints =
+                            case dim of
+                                Dim1D ->
+                                    points1D
+
+                                Dim2D ->
+                                    points2D
+
+                                Dim3D ->
+                                    points3D
+
+                        newModel =
+                            { model
+                                | state = state
+                                , points =
+                                    newCoords
+                                        model.points
+                                        dimPoints
+                            }
+                    in
+                    update StartedSim newModel
 
         StartedSim ->
             case model.state of
@@ -484,7 +431,7 @@ update msg model =
                     in
                     ( { model
                         | state = Simulation dim Start Manual
-                        , simSelectedBox = Nothing
+                        , simSelectedBox = Just initialBox
                         , userSelectedBox = Nothing
                         , points = initialPoints
                         , candidates =
@@ -500,6 +447,49 @@ update msg model =
 
         SteppedSim ->
             simulateStep model
+
+        SetControl c ->
+            let
+                newModel =
+                    case model.state of
+                        Intro ->
+                            model
+
+                        Wrapup ->
+                            model
+
+                        Simulation dim simState _ ->
+                            { model | state = Simulation dim simState c }
+            in
+            if c == Skip then
+                simulateStep newModel
+
+            else
+                ( newModel, Cmd.none )
+
+        SelectedBox box ->
+            ( { model | userSelectedBox = box }, Cmd.none )
+
+        -- optional toggles
+        ToggledPrecision b ->
+            ( { model | showRealPriority = b }, Cmd.none )
+
+        ToggledRhombiDodecOption b ->
+            ( { model | showRhombiDodec = b }, Cmd.none )
+
+        ToggledTetraHexOption b ->
+            ( { model | showTetrakis = b }, Cmd.none )
+
+        ToggledRhombiCubeOption b ->
+            ( { model | showRhombiCube = b }, Cmd.none )
+
+        -- animation ticks
+        TickedAnimation duration ->
+            ( { model
+                | points = List.map (animateEntity duration) model.points
+              }
+            , Cmd.none
+            )
 
 
 ifInRangeofBox :
@@ -718,7 +708,6 @@ newCoords entities newPoints =
 
 simulateStep : Model -> ( Model, Cmd msg )
 simulateStep model =
-    -- step only works until we find the answer
     case model.state of
         Intro ->
             ( model, Cmd.none )
@@ -919,7 +908,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch <|
         Browser.Events.onResize (\_ _ -> RequestedViewportSize)
-            :: (if model.orbiting then
+            :: (if model.camOrbiting then
                     [ Browser.Events.onMouseMove decodeMouseMove
                     , Browser.Events.onMouseUp (Decode.succeed ReleasedMouse)
                     ]
@@ -942,9 +931,9 @@ subscriptions model =
                     []
                )
             ++ (if
-                    (model.state /= Intro)
+                    (model.camSize == Nothing)
                         && (model.state /= Wrapup)
-                        && (model.cameraSize == Nothing)
+                        && (model.state /= Intro)
                 then
                     [ Browser.Events.onAnimationFrame <|
                         always RequestedViewportSize
@@ -997,9 +986,6 @@ isFastForwardingSim state =
                 Solved _ _ ->
                     False
 
-                Uninitialised ->
-                    False
-
 
 
 -- VIEW
@@ -1015,20 +1001,21 @@ view model =
                     viewSectionIntro model.state
 
                 Simulation dim simState control ->
-                    [ viewSectionScene model dim
-                    , viewSectionControls model
+                    [ viewSectionControls model
                         model.state
                         dim
                         simState
                         control
+                    , viewSectionScene model dim
                     , viewSectionCandidatesQueue
-                        (model.cameraSize /= Nothing)
+                        (model.camSize /= Nothing)
+                        model.showOptions
                         model.showRealPriority
                         dim
                         model.userSelectedBox
                         model.candidates
                     , viewSectionToScoreQueue
-                        (model.cameraSize /= Nothing)
+                        (model.camSize /= Nothing)
                         dim
                         model.userSelectedBox
                         model.toBeScored
@@ -1076,9 +1063,9 @@ viewHeader state =
         , div [ class "button-group" ] <|
             List.map buttonStep
                 [ ( Intro, "1" )
-                , ( Simulation Dim1D Uninitialised Manual, "2" )
-                , ( Simulation Dim2D Uninitialised Manual, "3" )
-                , ( Simulation Dim3D Uninitialised Manual, "4" )
+                , ( Simulation Dim1D Start Manual, "2" )
+                , ( Simulation Dim2D Start Manual, "3" )
+                , ( Simulation Dim3D Start Manual, "4" )
                 , ( Wrapup, "5" )
                 ]
         ]
@@ -1094,8 +1081,10 @@ viewSectionIntro state =
         , p []
             [ text "data structure explain: stack -> queue -> priority queue" ]
         , p [] [ text "simplify problem to 1 dimension to make it easier" ]
-        , button [ onClick <| ChangedState <| getNextState state ]
-            [ text "next state" ]
+        , div [ class "push-right" ]
+            [ button [ onClick <| ChangedState <| getNextState state ]
+                [ text "next state" ]
+            ]
         ]
     ]
 
@@ -1106,9 +1095,9 @@ viewSectionScene model dimension =
         viewpoint =
             Viewpoint3d.orbitZ
                 { focalPoint = Point3d.meters 0.5 0.5 0
-                , azimuth = model.azimuth
-                , elevation = model.elevation
-                , distance = model.distance
+                , azimuth = model.camAzimuth
+                , elevation = model.camElevation
+                , distance = model.camDistance
                 }
 
         axes =
@@ -1192,12 +1181,9 @@ viewSectionScene model dimension =
                 |> List.concat
     in
     section
-        [ Html.Events.onMouseDown DepressedMouse
-        , Html.Events.Extra.Wheel.onWheel ChangedZoom
-        , id "scene-window"
-        ]
+        [ id "scene-window" ]
     <|
-        case model.cameraSize of
+        case model.camSize of
             Just cameraSize ->
                 let
                     cameraWidth =
@@ -1214,58 +1200,94 @@ viewSectionScene model dimension =
                                 (Pixels.int 300)
                                 (Pixels.int 660)
                 in
-                [ Scene3d.unlit
-                    { camera =
-                        case model.projection of
-                            Orthographic ->
-                                Camera3d.orthographic
-                                    { viewpoint = viewpoint
-                                    , viewportHeight =
-                                        Quantity.half
-                                            model.distance
-                                    }
+                [ div
+                    [ Html.Events.onMouseDown DepressedMouse
+                    , Html.Events.Extra.Wheel.onWheel ChangedZoom
+                    ]
+                    [ Scene3d.unlit
+                        { camera =
+                            case model.camProjection of
+                                Orthographic ->
+                                    Camera3d.orthographic
+                                        { viewpoint = viewpoint
+                                        , viewportHeight =
+                                            Quantity.half
+                                                model.camDistance
+                                        }
 
-                            Perspective ->
-                                Camera3d.perspective
-                                    { viewpoint = viewpoint
-                                    , verticalFieldOfView = Angle.degrees 30
-                                    }
-                    , clipDepth = Length.meters 0.1
-                    , dimensions = ( cameraWidth, cameraHeight )
-                    , background = Scene3d.transparentBackground
-                    , entities =
-                        axes
-                            ++ boundingBox
-                            ++ boundingBoxUser
-                            ++ List.map createSceneEntity model.points
-                            ++ showRhombiDodec
-                            ++ showTetraHex
-                            ++ showRhombiCube
-                            ++ showSubBox
-                    }
-                , div [ class "camera-controls" ]
-                    (if model.cameraMoved then
-                        [ button [ onClick SelectedTopDownCamera ]
-                            [ text "top down" ]
-                        , button [ onClick SelectedInitialCamera ]
-                            [ text "fourtyfive" ]
-                        , div []
-                            [ label [ for "toggle-projection" ]
-                                [ input
-                                    [ type_ "checkbox"
-                                    , onClick <| ToggledProjection
-                                    , checked (model.projection == Orthographic)
-                                    , id "toggle-projection"
-                                    ]
-                                    []
-                                , text "toggle orthographic"
-                                ]
+                                Perspective ->
+                                    Camera3d.perspective
+                                        { viewpoint = viewpoint
+                                        , verticalFieldOfView = Angle.degrees 30
+                                        }
+                        , clipDepth = Length.meters 0.1
+                        , dimensions = ( cameraWidth, cameraHeight )
+                        , background = Scene3d.transparentBackground
+                        , entities =
+                            axes
+                                ++ boundingBox
+                                ++ boundingBoxUser
+                                ++ List.map createSceneEntity model.points
+                                ++ showRhombiDodec
+                                ++ showTetraHex
+                                ++ showRhombiCube
+                                ++ showSubBox
+                        }
+                    ]
+                , div [ class "camera-controls" ] <|
+                    (if model.camMoved || model.showOptions then
+                        [ div [ class "button-group" ]
+                            [ button [ onClick SelectedTopDownCamera ]
+                                [ text "top down" ]
+                            , button [ onClick SelectedInitialCamera ]
+                                [ text "fourtyfive" ]
                             ]
                         ]
+                            ++ (if model.showOptions then
+                                    [ div []
+                                        [ label [ for "toggle-projection" ]
+                                            [ input
+                                                [ type_ "checkbox"
+                                                , onClick <| ToggledProjection
+                                                , checked
+                                                    (model.camProjection == Orthographic)
+                                                , id "toggle-projection"
+                                                ]
+                                                []
+                                            , text "toggle orthographic"
+                                            ]
+                                        , label
+                                            [ for "show-rhombicube" ]
+                                            [ input
+                                                [ type_ "checkbox"
+                                                , onClick <|
+                                                    ToggledRhombiCubeOption
+                                                        (not model.showRhombiCube)
+                                                , checked model.showRhombiCube
+                                                , id "show-rhombicube"
+                                                ]
+                                                []
+                                            , text "draw rhombicubeoctahedron"
+                                            ]
+                                        ]
+                                    ]
+
+                                else
+                                    []
+                               )
 
                      else
                         []
                     )
+                        ++ (if model.userSelectedBox /= Nothing then
+                                [ br [] []
+                                , button [ onClick <| SelectedBox Nothing ]
+                                    [ text "clear selectedbox" ]
+                                ]
+
+                            else
+                                []
+                           )
                 ]
 
             Nothing ->
@@ -1289,67 +1311,61 @@ viewSectionControls model state dim simState control =
                 plural
 
         showCode =
-            viewSimStateExplain dim
-                ++ viewPseudoCode simState
-                ++ (case simState of
-                        Solved answer score ->
-                            [ p []
-                                [ text <|
-                                    "Box has a width of 1 so the answer is: "
-                                , viewAnswer dim answer
-                                , text <|
-                                    " with "
-                                        ++ String.fromInt score
-                                        ++ " "
-                                        ++ pluralise "point" "points" score
-                                        ++ " in range."
-                                ]
-                            ]
+            viewPseudoCode simState
 
-                        Uninitialised ->
-                            []
+        viewStatus =
+            case simState of
+                Solved answer score ->
+                    p []
+                        [ text <|
+                            "Box has a width of 1 so the answer is: "
+                        , viewAnswer dim answer
+                        , text <|
+                            " with "
+                                ++ String.fromInt score
+                                ++ " "
+                                ++ pluralise "point" "points" score
+                                ++ " in range."
+                        ]
 
-                        Start ->
-                            [ p [] [ text "Initial box added." ] ]
+                Start ->
+                    p [] [ text "Initial box added." ]
 
-                        SplitIntoSubBoxes width ->
-                            [ p []
-                                [ text <|
-                                    "Box has a width of "
-                                        ++ String.fromInt width
-                                        ++ ", so split into smaller boxes."
-                                ]
-                            ]
+                SplitIntoSubBoxes width ->
+                    p []
+                        [ text <|
+                            "Box has a width of "
+                                ++ String.fromInt width
+                                ++ ", so split into smaller boxes."
+                        ]
 
-                        ScoredBox score ->
-                            [ p []
-                                [ text <|
-                                    "Box has "
-                                        ++ String.fromInt score
-                                        ++ " "
-                                        ++ pluralise "point" "points" score
-                                        ++ " in range.  Added to queue."
-                                ]
-                            ]
-                   )
+                ScoredBox score ->
+                    p []
+                        [ text <|
+                            "Box has "
+                                ++ String.fromInt score
+                                ++ " "
+                                ++ pluralise "point" "points" score
+                                ++ " in range.  Added to queue."
+                        ]
 
         showButtons =
-            [ Html.Keyed.node "div"
-                []
+            Html.Keyed.node "div"
+                [ class "status-buttons" ]
                 [ case simState of
                     Solved _ _ ->
                         ( "solved"
                         , div []
                             [ button
                                 [ onClick StartedSim ]
-                                [ text "start again" ]
+                                [ text "reset sim" ]
+                            , button
+                                [ onClick <|
+                                    ChangedState <|
+                                        getNextState state
+                                ]
+                                [ text "next dimension" ]
                             ]
-                        )
-
-                    Uninitialised ->
-                        ( "unit"
-                        , div []
-                            [ button [ onClick StartedSim ] [ text "start" ] ]
                         )
 
                     _ ->
@@ -1387,48 +1403,20 @@ viewSectionControls model state dim simState control =
                             Skip ->
                                 ( "skipping", div [] [ text "skipping..." ] )
                 ]
-            ]
-
-        isSolved ss =
-            case ss of
-                Solved _ _ ->
-                    True
-
-                _ ->
-                    False
     in
     section [ id "controls" ] <|
-        showCode
-            ++ showButtons
-            ++ (if isSolved simState then
-                    [ p [] [ text "state control" ]
-                    , button [ onClick <| ChangedState <| getNextState state ]
-                        [ text "next state" ]
-                    ]
-
-                else
-                    []
-               )
+        viewSimStateExplain dim
+            ++ [ div [ class "status-bar" ] [ showButtons, viewStatus ] ]
+            ++ showCode
             ++ (if
-                    (model.simSelectedBox /= Nothing)
+                    ((model.simSelectedBox /= Nothing)
                         || (model.userSelectedBox /= Nothing)
+                    )
+                        && model.showOptions
                 then
-                    [ p [] [ text "show extra shapes" ]
-                    , div []
+                    [ p [] [ text "extra options" ]
+                    , div [ class "toggles" ]
                         [ label
-                            [ for "show-rhombicube" ]
-                            [ input
-                                [ type_ "checkbox"
-                                , onClick <|
-                                    ToggledRhombiCubeOption
-                                        (not model.showRhombiCube)
-                                , checked model.showRhombiCube
-                                , id "show-rhombicube"
-                                ]
-                                []
-                            , text "draw rhombicubeoctahedron"
-                            ]
-                        , label
                             [ for "show-rhombidec" ]
                             [ input
                                 [ type_ "checkbox"
@@ -1455,33 +1443,7 @@ viewSectionControls model state dim simState control =
                             , text "draw tetrakis hexahahedron"
                             ]
                         ]
-                    , p [] [ text "misc options" ]
-                    , div []
-                        [ label
-                            [ for "toggle-precision" ]
-                            [ input
-                                [ type_ "checkbox"
-                                , onClick <|
-                                    ToggledPrecision
-                                        (not model.showRealPriority)
-                                , checked model.showRealPriority
-                                , id "toggle-precision"
-                                ]
-                                []
-                            , text "toggle precision"
-                            ]
-                        ]
                     ]
-                        ++ (if model.userSelectedBox /= Nothing then
-                                [ br [] []
-                                , button [ onClick <| SelectedBox Nothing ]
-                                    [ text "clear selectedbox"
-                                    ]
-                                ]
-
-                            else
-                                []
-                           )
 
                 else
                     []
@@ -1580,13 +1542,14 @@ viewPseudoCode simState =
 viewSectionCandidatesQueue :
     Bool
     -> Bool
+    -> Bool
     -> Dimension
     -> Maybe (Block3d.Block3d Length.Meters Coords)
     -> PriorityQueue (Block3d.Block3d Length.Meters Coords) Float
     -> Html Msg
-viewSectionCandidatesQueue show showRealPriority dimension selectedBlock candidates =
+viewSectionCandidatesQueue show showOptions showRealPriority dimension selectedBlock candidates =
     if show then
-        section [ id "priority-table" ]
+        section [ id "priority-table" ] <|
             [ table []
                 [ caption []
                     [ text <|
@@ -1607,6 +1570,25 @@ viewSectionCandidatesQueue show showRealPriority dimension selectedBlock candida
                         candidates
                 ]
             ]
+                ++ (if showOptions then
+                        [ label
+                            [ for "toggle-precision" ]
+                            [ input
+                                [ type_ "checkbox"
+                                , onClick <|
+                                    ToggledPrecision
+                                        (not showRealPriority)
+                                , checked showRealPriority
+                                , id "toggle-precision"
+                                ]
+                                []
+                            , text "Show real priority"
+                            ]
+                        ]
+
+                    else
+                        []
+                   )
 
     else
         text ""
@@ -1659,9 +1641,13 @@ for example we were actually using (points in range - (1 + 0.001 * width))
 to prioritse smaller boxes with the same number of points in range
 """
             ]
-        , p [] [ text "to see this and to play with few extra toggles:" ]
-        , button [ onClick <| ChangedState <| getNextState state ]
-            [ text "back to start"
+        , p [] [ text """check in range was actually checking rhombicubeoctahedron 
+shape not cube in 3d""" ]
+        , p [] [ text "to see priority/shape and to play with few extra toggles:" ]
+        , div [ class "push-right" ]
+            [ button [ onClick <| ChangedState <| getNextState state ]
+                [ text "back to start"
+                ]
             ]
         ]
     ]
@@ -1671,15 +1657,15 @@ getNextState : State -> State
 getNextState state =
     case state of
         Intro ->
-            Simulation Dim1D Uninitialised Manual
+            Simulation Dim1D Start Manual
 
         Simulation dim _ _ ->
             case dim of
                 Dim1D ->
-                    Simulation Dim2D Uninitialised Manual
+                    Simulation Dim2D Start Manual
 
                 Dim2D ->
-                    Simulation Dim3D Uninitialised Manual
+                    Simulation Dim3D Start Manual
 
                 Dim3D ->
                     Wrapup

@@ -19,12 +19,56 @@ body {
   margin: 0;
 }
 
-p {
+p,
+.push-right {
   max-width: 80ch;
 }
 
 label {
   user-select: none;
+}
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+}
+
+input[type=radio],
+input[type=checkbox] {
+  margin: 0 0.5rem;
+}
+
+button,
+label,
+input[type=radio],
+input[type=checkbox] {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed
+}
+
+.push-right {
+  display: flex;
+  justify-content: end;
+}
+
+.status-bar {
+  min-height: 2lh;
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.status-bar>* {
+  flex: 1;
+  margin: 0;
+}
+
+.status-bar>.status-buttons {
+  text-align: right;
 }
 
 /* #endregion */
@@ -72,9 +116,9 @@ main {
   main {
     display: grid;
     grid-template-areas:
-      "scene controls"
-      "queue controls"
-      "split controls";
+      "controls scene"
+      "controls queue"
+      "controls split";
     grid-template-columns: repeat(2, 1fr);
     grid-template-rows: auto auto 1fr;
   }
@@ -84,9 +128,9 @@ main {
   main {
     display: grid;
     grid-template-areas:
-      "scene scene controls"
-      "queue split controls";
-    grid-template-columns: 1fr 1fr 2fr;
+      "controls scene scene"
+      "controls queue split";
+    grid-template-columns: 2fr 1fr 1fr;
     grid-template-rows: auto 1fr;
   }
 }
@@ -183,22 +227,19 @@ tbody>tr:nth-child(odd) {
 /* #region Code highlights */
 
 .code-container {
-  width: fit-content;
+  max-width: 53ch;
   border: 1px solid var(--background-colour-alt);
-  padding: 0.5rem;
-}
-
-code:last-child {
-  padding: 0;
+  margin: 1em auto;
+  padding: 0 1rem 0.25rem 0;
 }
 
 code {
   display: block;
-  padding-bottom: 0.5rem
+  padding: 0.25rem 0 0.25rem 1rem
 }
 
-code>code {
-  margin-left: 1rem
+code:last-child {
+  padding-bottom: 0;
 }
 
 code.active {
