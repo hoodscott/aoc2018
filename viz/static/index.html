@@ -16,7 +16,8 @@
 
 <script>
   var app = Elm.Octree.init({
-    node: document.getElementById("simulator")
+    node: document.getElementById("simulator"),
+    flags: window.matchMedia("(prefers-reduced-motion: reduce)").matches
   });
 </script>
 

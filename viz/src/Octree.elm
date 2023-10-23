@@ -33,7 +33,7 @@ import Vector3d
 import Viewpoint3d
 
 
-main : Program () Model Msg
+main : Program Bool Model Msg
 main =
     Browser.element
         { init = init
@@ -124,6 +124,9 @@ type alias Model =
     , showRhombiDodec : Bool
     , showTetrakis : Bool
     , showRealPriority : Bool
+
+    -- accessibility
+    , prefersReducedMotion : Bool
     }
 
 
@@ -181,6 +184,9 @@ initialModel =
     , showRhombiDodec = False
     , showTetrakis = False
     , showRealPriority = False
+
+    -- accessibility
+    , prefersReducedMotion = False
     }
 
 
@@ -189,9 +195,15 @@ createAnimatedEntity point =
     AnimatedPoint point point [] False
 
 
-init : () -> ( Model, Cmd msg )
-init _ =
-    ( initialModel, Cmd.none )
+init : Bool -> ( Model, Cmd msg )
+init flagPreferReducedMotion =
+    let
+        _ =
+            flagPreferReducedMotion |> Debug.log "flag:::"
+    in
+    ( { initialModel | prefersReducedMotion = flagPreferReducedMotion }
+    , Cmd.none
+    )
 
 
 
@@ -399,15 +411,19 @@ update msg model =
                                     Data.points3D
 
                         shouldAnimate =
-                            case model.state of
-                                Intro ->
-                                    False
+                            if model.prefersReducedMotion then
+                                False
 
-                                Wrapup ->
-                                    False
+                            else
+                                case model.state of
+                                    Intro ->
+                                        False
 
-                                Simulation _ _ _ ->
-                                    True
+                                    Wrapup ->
+                                        False
+
+                                    Simulation _ _ _ ->
+                                        True
 
                         newModel =
                             { model

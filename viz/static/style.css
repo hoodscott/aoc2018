@@ -147,7 +147,12 @@ button {
   border: 1px solid var(--colour-primary);
   border-radius: 4px;
   padding: 0 1em;
-  transition: filter ease-in-out 100ms;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button {
+    transition: filter ease-in-out 100ms;
+  }
 }
 
 button.primary {
@@ -353,10 +358,15 @@ header>div {
 }
 
 header .button-group button {
-  transition-property: background-color, border-color;
-  transition-timing-function: ease-out;
-  transition-duration: 250ms;
-  min-width: 2rem;
+  min-width: 3rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  header .button-group button {
+    transition-property: background-color, border-color;
+    transition-timing-function: ease-out;
+    transition-duration: 2250ms;
+  }
 }
 
 footer>div {
