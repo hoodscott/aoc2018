@@ -197,10 +197,6 @@ createAnimatedEntity point =
 
 init : Bool -> ( Model, Cmd msg )
 init flagPreferReducedMotion =
-    let
-        _ =
-            flagPreferReducedMotion |> Debug.log "flag:::"
-    in
     ( { initialModel | prefersReducedMotion = flagPreferReducedMotion }
     , Cmd.none
     )

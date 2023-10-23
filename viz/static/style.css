@@ -365,7 +365,7 @@ header .button-group button {
   header .button-group button {
     transition-property: background-color, border-color;
     transition-timing-function: ease-out;
-    transition-duration: 2250ms;
+    transition-duration: 250ms;
   }
 }
 
