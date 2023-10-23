@@ -13,7 +13,7 @@ import Data exposing (Coords, palette)
 import Direction3d
 import Duration exposing (Duration)
 import Html exposing (..)
-import Html.Attributes exposing (checked, class, classList, disabled, for, id, name, type_)
+import Html.Attributes exposing (checked, class, classList, disabled, for, id, name, tabindex, type_)
 import Html.Events exposing (onClick)
 import Html.Events.Extra.Wheel
 import Html.Keyed
@@ -216,6 +216,7 @@ type Msg
     | SteppedSim
     | SetControl SimulationControl
     | SelectedBox (Maybe (Block3d.Block3d Length.Meters Coords))
+    | AttemptedFocus (Result Browser.Dom.Error ())
       -- optional toggles
     | ToggledPrecision Bool
     | ToggledRhombiCubeOption Bool
@@ -312,10 +313,22 @@ update msg model =
             )
 
         RequestedViewportSize ->
-            ( model
-            , Browser.Dom.getElement "controls"
-                |> Task.attempt ReturnedViewportSize
-            )
+            let
+                cmdList =
+                    (Browser.Dom.getElement "controls"
+                        |> Task.attempt ReturnedViewportSize
+                    )
+                        :: (-- camSize is only Nothing first time this runs
+                            -- in this case (invoked from ChangedState)
+                            -- we need to also attempt focus
+                            if model.camSize == Nothing then
+                                [ attemptMainFocus ]
+
+                            else
+                                []
+                           )
+            in
+            ( model, Cmd.batch cmdList )
 
         ReturnedViewportSize res ->
             case res of
@@ -351,7 +364,7 @@ update msg model =
         ChangedState state ->
             case state of
                 Intro ->
-                    ( { model | state = state }, Cmd.none )
+                    ( { model | state = state }, attemptMainFocus )
 
                 Wrapup ->
                     let
@@ -369,7 +382,7 @@ update msg model =
                         , showOptions = True
                         , showRealPriority = togglePrecisionFirstTime
                       }
-                    , Cmd.none
+                    , attemptMainFocus
                     )
 
                 Simulation dim _ _ ->
@@ -454,7 +467,7 @@ update msg model =
                             }
                     in
                     if model.camSize /= Nothing then
-                        ( newModel, Cmd.none )
+                        ( newModel, attemptMainFocus )
 
                     else
                         update RequestedViewportSize newModel
@@ -484,6 +497,9 @@ update msg model =
         SelectedBox box ->
             ( { model | userSelectedBox = box }, Cmd.none )
 
+        AttemptedFocus _ ->
+            ( model, Cmd.none )
+
         -- optional toggles
         ToggledPrecision b ->
             ( { model | showRealPriority = b }, Cmd.none )
@@ -504,6 +520,12 @@ update msg model =
               }
             , Cmd.none
             )
+
+
+attemptMainFocus : Cmd Msg
+attemptMainFocus =
+    Browser.Dom.focus mainID
+        |> Task.attempt AttemptedFocus
 
 
 ifInRangeofBox :
@@ -1026,37 +1048,44 @@ view : Model -> Html Msg
 view model =
     div []
         [ header [] [ viewHeader model.state ]
-        , main_ []
-            (case model.state of
-                Intro ->
-                    viewSectionIntro model.state
+        , main_ [] <|
+            span [ id mainID, class "visually-hidden", tabindex -1 ]
+                [ text "start of main content" ]
+                :: (case model.state of
+                        Intro ->
+                            viewSectionIntro model.state
 
-                Simulation dim simState control ->
-                    [ viewSectionControls model
-                        model.state
-                        dim
-                        simState
-                        control
-                    , viewSectionScene model dim
-                    , viewSectionCandidatesQueue
-                        (model.camSize /= Nothing)
-                        model.showOptions
-                        model.showRealPriority
-                        dim
-                        model.userSelectedBox
-                        model.candidates
-                    , viewSectionToScoreQueue
-                        (model.camSize /= Nothing)
-                        dim
-                        model.userSelectedBox
-                        model.toBeScored
-                    ]
+                        Simulation dim simState control ->
+                            [ viewSectionControls model
+                                model.state
+                                dim
+                                simState
+                                control
+                            , viewSectionScene model dim
+                            , viewSectionCandidatesQueue
+                                (model.camSize /= Nothing)
+                                model.showOptions
+                                model.showRealPriority
+                                dim
+                                model.userSelectedBox
+                                model.candidates
+                            , viewSectionToScoreQueue
+                                (model.camSize /= Nothing)
+                                dim
+                                model.userSelectedBox
+                                model.toBeScored
+                            ]
 
-                Wrapup ->
-                    viewSectionWrapup model.state
-            )
+                        Wrapup ->
+                            viewSectionWrapup model.state
+                   )
         , footer [] [ div [] [ text "foot" ] ]
         ]
+
+
+mainID : String
+mainID =
+    "main-content"
 
 
 viewHeader : State -> Html Msg
